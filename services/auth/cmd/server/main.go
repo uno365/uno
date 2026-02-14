@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"uno/services/auth/internal/handler"
+	"uno/services/auth/internal/middleware"
 	"uno/services/auth/internal/repository/pg"
 	"uno/services/auth/internal/service"
 	"uno/services/auth/internal/token"
@@ -26,8 +27,9 @@ func SetupAuthRouter(db *pgxpool.Pool, secret string) *gin.Engine {
 	authService := service.NewAuthService(userRepo, jwtManager)
 	authHandler := handler.NewAuthHandler(authService)
 
-	// Setup Gin router
+	// Setup Gin router with error handler middleware
 	router := gin.Default()
+	router.Use(middleware.ErrorHandler())
 	router.POST("/register", authHandler.Register)
 	router.POST("/login", authHandler.Login)
 	return router

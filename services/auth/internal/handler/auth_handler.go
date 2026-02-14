@@ -41,14 +41,14 @@ func (handler *AuthHandler) Register(gc *gin.Context) {
 	// Call service layer to register user
 	access, refresh, err := handler.service.Register(gc.Request.Context(), req.Email, req.Password)
 
-	// Handle errors
+	// Handle errors via middleware
 	if err != nil {
-		gc.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = gc.Error(err)
 		return
 	}
 
 	// Write response
-	gc.JSON(http.StatusOK, RegisterResponse{
+	gc.JSON(http.StatusCreated, RegisterResponse{
 		AccessToken:  access,
 		RefreshToken: refresh,
 	})
@@ -77,9 +77,9 @@ func (handler *AuthHandler) Login(gc *gin.Context) {
 	// Call service layer to login user
 	access, refresh, err := handler.service.Login(gc.Request.Context(), req.Email, req.Password)
 
-	// Handle errors
+	// Handle errors via middleware
 	if err != nil {
-		gc.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		_ = gc.Error(err)
 		return
 	}
 

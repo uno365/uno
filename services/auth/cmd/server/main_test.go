@@ -63,7 +63,7 @@ func TestServerIntegration(t *testing.T) {
 		defer resp.Body.Close()
 
 		// Verify response
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 		var body authResponse
 		err = json.NewDecoder(resp.Body).Decode(&body)
@@ -89,7 +89,7 @@ func TestServerIntegration(t *testing.T) {
 		defer resp.Body.Close()
 
 		// Verify response
-		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		require.Equal(t, http.StatusConflict, resp.StatusCode)
 
 		var body errorResponse
 		err = json.NewDecoder(resp.Body).Decode(&body)
@@ -109,7 +109,7 @@ func TestServerIntegration(t *testing.T) {
 		regResp, err := http.Post(serverURL+"/register", "application/json", bytes.NewReader(reqBodyJSON))
 		require.NoError(t, err)
 		defer regResp.Body.Close()
-		require.Equal(t, http.StatusOK, regResp.StatusCode)
+		require.Equal(t, http.StatusCreated, regResp.StatusCode)
 
 		// Make HTTP request to login endpoint
 		resp, err := http.Post(serverURL+"/login", "application/json", bytes.NewReader(reqBodyJSON))

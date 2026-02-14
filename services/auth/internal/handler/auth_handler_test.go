@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"uno/services/auth/internal/middleware"
 	"uno/services/auth/internal/repository/pg"
 	"uno/services/auth/internal/service"
 	"uno/services/auth/internal/token"
@@ -35,6 +36,7 @@ func setupTest(t *testing.T) (*AuthHandler, *gin.Engine, func()) {
 
 	// Setup router
 	router := gin.New()
+	router.Use(middleware.ErrorHandler())
 	router.POST("/register", h.Register)
 	router.POST("/login", h.Login)
 
@@ -63,7 +65,7 @@ func TestAuthHandler_DB(t *testing.T) {
 
 		// Serve the request
 		router.ServeHTTP(rr, req)
-		require.Equal(t, http.StatusOK, rr.Code, "body: %s", rr.Body.String())
+		require.Equal(t, http.StatusCreated, rr.Code, "body: %s", rr.Body.String())
 
 		// Parse response and verify tokens are returned
 		var resp RegisterResponse
@@ -94,7 +96,7 @@ func TestAuthHandler_DB(t *testing.T) {
 		rr2 := httptest.NewRecorder()
 		router.ServeHTTP(rr2, req2)
 
-		assert.Equal(t, http.StatusBadRequest, rr2.Code)
+		assert.Equal(t, http.StatusConflict, rr2.Code)
 	})
 
 	t.Run("Login success", func(t *testing.T) {
