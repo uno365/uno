@@ -1,3 +1,4 @@
+// Package main is the entry point for the auth service.
 package main
 
 import (
@@ -19,6 +20,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
+// SetupAuthRouter initializes and configures the Gin router with all auth routes.
 func SetupAuthRouter(db *pgxpool.Pool, secret string) *gin.Engine {
 
 	// Initialize repositories, services, and handlers

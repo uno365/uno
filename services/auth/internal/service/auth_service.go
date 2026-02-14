@@ -1,3 +1,4 @@
+// Package service implements the business logic for authentication operations.
 package service
 
 import (
@@ -10,15 +11,18 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// AuthService handles user authentication operations including registration and login.
 type AuthService struct {
 	userRepo repository.UserRepository
 	jwt      *token.JWTManager
 }
 
+// NewAuthService creates a new AuthService with the given repository and JWT manager.
 func NewAuthService(repo repository.UserRepository, jwt *token.JWTManager) *AuthService {
 	return &AuthService{userRepo: repo, jwt: jwt}
 }
 
+// Register creates a new user account and returns access and refresh tokens.
 func (s *AuthService) Register(ctx context.Context, email, password string) (string, string, error) {
 	// Check if email already exists
 	_, err := s.userRepo.GetByEmail(ctx, email)
@@ -47,6 +51,7 @@ func (s *AuthService) Register(ctx context.Context, email, password string) (str
 	return accessToken, refreshToken, nil
 }
 
+// Login authenticates a user and returns access and refresh tokens.
 func (s *AuthService) Login(ctx context.Context, email, password string) (string, string, error) {
 	// Find user by email
 	user, err := s.userRepo.GetByEmail(ctx, email)

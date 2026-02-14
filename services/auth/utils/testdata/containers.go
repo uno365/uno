@@ -1,3 +1,4 @@
+// Package testdata provides test utilities including database containers and helpers.
 package testdata
 
 import (
@@ -6,17 +7,20 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
+// PostgresContainer wraps a postgres test container with its connection string.
 type PostgresContainer struct {
 	*postgres.PostgresContainer
 	ConnectionString string
 }
 
+// Database configuration constants for test containers.
 const (
 	dbName     = "auth_db_test"
 	dbUser     = "postgres"
 	dbPassword = "postgres"
 )
 
+// CreatePostgresContainer creates and starts a new PostgreSQL test container.
 func CreatePostgresContainer(ctx context.Context) (*PostgresContainer, error) {
 
 	pgContainer, err := postgres.Run(ctx,

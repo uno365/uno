@@ -1,3 +1,4 @@
+// Package middleware provides HTTP middleware components for the auth service.
 package middleware
 
 import (

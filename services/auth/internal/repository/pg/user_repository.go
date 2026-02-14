@@ -1,21 +1,26 @@
+// Package pg provides PostgreSQL implementations of repository interfaces.
 package pg
 
 import (
 	"context"
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"time"
 	"uno/services/auth/internal/domain"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// PostgresUserRepository implements UserRepository using PostgreSQL.
 type PostgresUserRepository struct {
 	db *pgxpool.Pool
 }
 
+// NewPostgresUserRepository creates a new PostgresUserRepository with the given connection pool.
 func NewPostgresUserRepository(db *pgxpool.Pool) *PostgresUserRepository {
 	return &PostgresUserRepository{db: db}
 }
 
+// Create persists a new user to the database, generating a UUID and timestamp.
 func (r *PostgresUserRepository) Create(ctx context.Context, user *domain.User) error {
 	user.ID = uuid.NewString()
 	user.CreatedAt = time.Now()
@@ -29,6 +34,7 @@ func (r *PostgresUserRepository) Create(ctx context.Context, user *domain.User) 
 	return err
 }
 
+// GetByEmail retrieves a user by their email address.
 func (r *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	row := r.db.QueryRow(ctx,
 		`SELECT id, email, password_hash, created_at
@@ -43,6 +49,7 @@ func (r *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (
 	return &user, nil
 }
 
+// GetByID retrieves a user by their unique identifier.
 func (r *PostgresUserRepository) GetByID(ctx context.Context, id string) (*domain.User, error) {
 	row := r.db.QueryRow(ctx,
 		`SELECT id, email, password_hash, created_at

@@ -1,12 +1,15 @@
+// Package utils provides utility functions for the auth service.
 package utils
 
 import (
+	"log/slog"
+
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	"log/slog"
 )
 
+// RunMigrations applies all pending database migrations from the source URL to the database.
 func RunMigrations(sourceURL string, databaseURL string) error {
 
 	// Create a new migrate instance with the provided source and database URLs
