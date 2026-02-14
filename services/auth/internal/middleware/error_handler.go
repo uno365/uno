@@ -2,12 +2,11 @@
 package middleware
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 
 	"uno/services/auth/internal/domain"
-
-	"github.com/gin-gonic/gin"
 )
 
 // ErrorResponse represents a standardized error response
@@ -16,27 +15,56 @@ type ErrorResponse struct {
 	Message string `json:"message,omitempty"`
 }
 
-// ErrorHandler is a middleware that handles errors added to the Gin context
-func ErrorHandler() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Next()
+// errorResponseWriter wraps http.ResponseWriter to track errors and written state
+type errorResponseWriter struct {
+	http.ResponseWriter
+	err     error
+	written bool
+}
 
-		// Check if there are any errors
-		if len(c.Errors) == 0 {
+// WriteHeader captures the written state
+func (w *errorResponseWriter) WriteHeader(code int) {
+	w.written = true
+	w.ResponseWriter.WriteHeader(code)
+}
+
+// Write captures the written state
+func (w *errorResponseWriter) Write(b []byte) (int, error) {
+	w.written = true
+	return w.ResponseWriter.Write(b)
+}
+
+// SetError stores an error to be handled by the middleware
+func SetError(w http.ResponseWriter, _ *http.Request, err error) {
+	if ew, ok := w.(*errorResponseWriter); ok {
+		ew.err = err
+	}
+}
+
+// ErrorHandler is a middleware that handles errors set via SetError
+func ErrorHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Wrap the response writer
+		ew := &errorResponseWriter{ResponseWriter: w}
+
+		// Call the next handler
+		next.ServeHTTP(ew, r)
+
+		// Check if there's an error to handle
+		if ew.err == nil {
 			return
 		}
 
-		// Get the last error
-		err := c.Errors.Last().Err
-
 		// Map domain errors to HTTP status codes
-		status, response := mapError(err)
+		status, response := mapError(ew.err)
 
 		// Only write response if not already written
-		if !c.Writer.Written() {
-			c.JSON(status, response)
+		if !ew.written {
+			ew.ResponseWriter.Header().Set("Content-Type", "application/json")
+			ew.ResponseWriter.WriteHeader(status)
+			json.NewEncoder(ew.ResponseWriter).Encode(response)
 		}
-	}
+	})
 }
 
 // mapError maps domain errors to HTTP status codes and responses

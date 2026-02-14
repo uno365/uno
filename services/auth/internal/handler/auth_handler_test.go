@@ -14,13 +14,13 @@ import (
 	"uno/services/auth/internal/token"
 	"uno/services/auth/utils/testdata"
 
-	"github.com/gin-gonic/gin"
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // setupTest creates a test DB, handler, and router, returning them along with a cleanup function
-func setupTest(t *testing.T) (*AuthHandler, *gin.Engine, func()) {
+func setupTest(t *testing.T) (*AuthHandler, *chi.Mux, func()) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -35,10 +35,10 @@ func setupTest(t *testing.T) (*AuthHandler, *gin.Engine, func()) {
 	h := NewAuthHandler(svc)
 
 	// Setup router
-	router := gin.New()
-	router.Use(middleware.ErrorHandler())
-	router.POST("/register", h.Register)
-	router.POST("/login", h.Login)
+	router := chi.NewRouter()
+	router.Use(middleware.ErrorHandler)
+	router.Post("/register", h.Register)
+	router.Post("/login", h.Login)
 
 	cleanup := func() {
 		db.Teardown(ctx)

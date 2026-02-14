@@ -9,23 +9,21 @@ import (
 
 	"uno/services/auth/internal/domain"
 
-	"github.com/gin-gonic/gin"
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func init() {
-	gin.SetMode(gin.TestMode)
-}
 
 func TestErrorHandler(t *testing.T) {
 
 	t.Run("no errors passes through", func(t *testing.T) {
 		// Setup router with middleware
-		router := gin.New()
-		router.Use(ErrorHandler())
-		router.GET("/test", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		router := chi.NewRouter()
+		router.Use(ErrorHandler)
+		router.Get("/test", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 		})
 
 		// Make request
@@ -40,10 +38,10 @@ func TestErrorHandler(t *testing.T) {
 
 	t.Run("ErrInvalidCredentials returns 401", func(t *testing.T) {
 		// Setup router with middleware
-		router := gin.New()
-		router.Use(ErrorHandler())
-		router.GET("/test", func(c *gin.Context) {
-			_ = c.Error(domain.ErrInvalidCredentials)
+		router := chi.NewRouter()
+		router.Use(ErrorHandler)
+		router.Get("/test", func(w http.ResponseWriter, r *http.Request) {
+			SetError(w, r, domain.ErrInvalidCredentials)
 		})
 
 		// Make request
@@ -64,10 +62,10 @@ func TestErrorHandler(t *testing.T) {
 
 	t.Run("ErrEmailExists returns 409", func(t *testing.T) {
 		// Setup router with middleware
-		router := gin.New()
-		router.Use(ErrorHandler())
-		router.GET("/test", func(c *gin.Context) {
-			_ = c.Error(domain.ErrEmailExists)
+		router := chi.NewRouter()
+		router.Use(ErrorHandler)
+		router.Get("/test", func(w http.ResponseWriter, r *http.Request) {
+			SetError(w, r, domain.ErrEmailExists)
 		})
 
 		// Make request
@@ -88,10 +86,10 @@ func TestErrorHandler(t *testing.T) {
 
 	t.Run("ErrUserNotFound returns 404", func(t *testing.T) {
 		// Setup router with middleware
-		router := gin.New()
-		router.Use(ErrorHandler())
-		router.GET("/test", func(c *gin.Context) {
-			_ = c.Error(domain.ErrUserNotFound)
+		router := chi.NewRouter()
+		router.Use(ErrorHandler)
+		router.Get("/test", func(w http.ResponseWriter, r *http.Request) {
+			SetError(w, r, domain.ErrUserNotFound)
 		})
 
 		// Make request
@@ -112,10 +110,10 @@ func TestErrorHandler(t *testing.T) {
 
 	t.Run("unknown error returns 500", func(t *testing.T) {
 		// Setup router with middleware
-		router := gin.New()
-		router.Use(ErrorHandler())
-		router.GET("/test", func(c *gin.Context) {
-			_ = c.Error(errors.New("some unexpected error"))
+		router := chi.NewRouter()
+		router.Use(ErrorHandler)
+		router.Get("/test", func(w http.ResponseWriter, r *http.Request) {
+			SetError(w, r, errors.New("some unexpected error"))
 		})
 
 		// Make request
@@ -136,11 +134,13 @@ func TestErrorHandler(t *testing.T) {
 
 	t.Run("does not overwrite already written response", func(t *testing.T) {
 		// Setup router with middleware
-		router := gin.New()
-		router.Use(ErrorHandler())
-		router.GET("/test", func(c *gin.Context) {
-			c.JSON(http.StatusBadRequest, gin.H{"custom": "error"})
-			_ = c.Error(domain.ErrInvalidCredentials)
+		router := chi.NewRouter()
+		router.Use(ErrorHandler)
+		router.Get("/test", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"custom": "error"})
+			SetError(w, r, domain.ErrInvalidCredentials)
 		})
 
 		// Make request
@@ -155,11 +155,11 @@ func TestErrorHandler(t *testing.T) {
 
 	t.Run("wrapped domain error is handled correctly", func(t *testing.T) {
 		// Setup router with middleware
-		router := gin.New()
-		router.Use(ErrorHandler())
-		router.GET("/test", func(c *gin.Context) {
+		router := chi.NewRouter()
+		router.Use(ErrorHandler)
+		router.Get("/test", func(w http.ResponseWriter, r *http.Request) {
 			wrappedErr := errors.Join(errors.New("context"), domain.ErrEmailExists)
-			_ = c.Error(wrappedErr)
+			SetError(w, r, wrappedErr)
 		})
 
 		// Make request

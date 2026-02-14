@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"os"
 
 	"uno/services/auth/internal/handler"
@@ -13,15 +14,16 @@ import (
 	"uno/services/auth/internal/token"
 	"uno/services/auth/utils"
 
-	"github.com/gin-gonic/gin"
+	"github.com/go-chi/chi/v5"
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
-// SetupAuthRouter initializes and configures the Gin router with all auth routes.
-func SetupAuthRouter(db *pgxpool.Pool, secret string) *gin.Engine {
+// SetupAuthRouter initializes and configures the Chi router with all auth routes.
+func SetupAuthRouter(db *pgxpool.Pool, secret string) *chi.Mux {
 
 	// Initialize repositories, services, and handlers
 	userRepo := pg.NewPostgresUserRepository(db)
@@ -29,11 +31,13 @@ func SetupAuthRouter(db *pgxpool.Pool, secret string) *gin.Engine {
 	authService := service.NewAuthService(userRepo, jwtManager)
 	authHandler := handler.NewAuthHandler(authService)
 
-	// Setup Gin router with error handler middleware
-	router := gin.Default()
-	router.Use(middleware.ErrorHandler())
-	router.POST("/register", authHandler.Register)
-	router.POST("/login", authHandler.Login)
+	// Setup Chi router with middleware
+	router := chi.NewRouter()
+	router.Use(chimw.Logger)
+	router.Use(chimw.Recoverer)
+	router.Use(middleware.ErrorHandler)
+	router.Post("/register", authHandler.Register)
+	router.Post("/login", authHandler.Login)
 	return router
 }
 
@@ -82,12 +86,12 @@ func main() {
 		slog.Default().Error("Failed to connect to database", "error", err)
 	}
 
-	// Setup Gin router
+	// Setup Chi router
 	router := SetupAuthRouter(db, secret)
 
 	slog.Default().Info("Auth service running on :" + port)
 
-	if err := router.Run(":" + port); err != nil {
+	if err := http.ListenAndServe(":"+port, router); err != nil {
 		slog.Default().Error("Failed to start server", "error", err)
 	}
 

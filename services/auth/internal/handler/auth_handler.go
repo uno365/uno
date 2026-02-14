@@ -2,11 +2,11 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 
+	"uno/services/auth/internal/middleware"
 	"uno/services/auth/internal/service"
-
-	"github.com/gin-gonic/gin"
 )
 
 // ================ Type and Constructor ================
@@ -36,25 +36,33 @@ type RegisterResponse struct {
 }
 
 // Register handles user registration requests.
-func (handler *AuthHandler) Register(gc *gin.Context) {
+func (handler *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	// Parse request body
 	var req RegisterRequest
-	if err := gc.ShouldBindJSON(&req); err != nil {
-		gc.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Validate required fields
+	if req.Email == "" || req.Password == "" {
+		http.Error(w, `{"error":"email and password are required"}`, http.StatusBadRequest)
 		return
 	}
 
 	// Call service layer to register user
-	access, refresh, err := handler.service.Register(gc.Request.Context(), req.Email, req.Password)
+	access, refresh, err := handler.service.Register(r.Context(), req.Email, req.Password)
 
 	// Handle errors via middleware
 	if err != nil {
-		_ = gc.Error(err)
+		middleware.SetError(w, r, err)
 		return
 	}
 
 	// Write response
-	gc.JSON(http.StatusCreated, RegisterResponse{
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(RegisterResponse{
 		AccessToken:  access,
 		RefreshToken: refresh,
 	})
@@ -75,25 +83,33 @@ type LoginResponse struct {
 }
 
 // Login handles user login requests.
-func (handler *AuthHandler) Login(gc *gin.Context) {
+func (handler *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Parse request body
 	var req LoginRequest
-	if err := gc.ShouldBindJSON(&req); err != nil {
-		gc.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Validate required fields
+	if req.Email == "" || req.Password == "" {
+		http.Error(w, `{"error":"email and password are required"}`, http.StatusBadRequest)
 		return
 	}
 
 	// Call service layer to login user
-	access, refresh, err := handler.service.Login(gc.Request.Context(), req.Email, req.Password)
+	access, refresh, err := handler.service.Login(r.Context(), req.Email, req.Password)
 
 	// Handle errors via middleware
 	if err != nil {
-		_ = gc.Error(err)
+		middleware.SetError(w, r, err)
 		return
 	}
 
 	// Write response
-	gc.JSON(http.StatusOK, LoginResponse{
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(LoginResponse{
 		AccessToken:  access,
 		RefreshToken: refresh,
 	})
