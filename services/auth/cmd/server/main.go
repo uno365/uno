@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log/slog"
-	"net/http"
 	"os"
 
 	"uno/services/auth/internal/handler"
@@ -12,11 +11,27 @@ import (
 	"uno/services/auth/internal/token"
 	"uno/services/auth/utils"
 
+	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
+
+func SetupAuthRouter(db *pgxpool.Pool, secret string) *gin.Engine {
+
+	// Initialize repositories, services, and handlers
+	userRepo := pg.NewPostgresUserRepository(db)
+	jwtManager := token.NewJWTManager(secret)
+	authService := service.NewAuthService(userRepo, jwtManager)
+	authHandler := handler.NewAuthHandler(authService)
+
+	// Setup Gin router
+	router := gin.Default()
+	router.POST("/register", authHandler.Register)
+	router.POST("/login", authHandler.Login)
+	return router
+}
 
 func main() {
 
@@ -63,16 +78,13 @@ func main() {
 		slog.Default().Error("Failed to connect to database", "error", err)
 	}
 
-	// Initialize repositories, services, and handlers
-	userRepo := pg.NewPostgresUserRepository(db)
-	jwtManager := token.NewJWTManager(secret)
-	authService := service.NewAuthService(userRepo, jwtManager)
-	authHandler := handler.NewAuthHandler(authService)
-
-	// Start HTTP server
-	http.HandleFunc("/register", authHandler.Register)
-	http.HandleFunc("/login", authHandler.Login)
+	// Setup Gin router
+	router := SetupAuthRouter(db, secret)
 
 	slog.Default().Info("Auth service running on :" + port)
-	slog.Default().Error("Failed to start server", "error", http.ListenAndServe(":"+port, nil))
+
+	if err := router.Run(":" + port); err != nil {
+		slog.Default().Error("Failed to start server", "error", err)
+	}
+
 }

@@ -6,89 +6,105 @@ import (
 	"uno/services/auth/internal/domain"
 	"uno/services/auth/internal/repository/pg"
 	"uno/services/auth/internal/token"
-	"uno/services/auth/utils/testutils/datacase"
+	"uno/services/auth/utils/testdata"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Integration tests using a real Postgres DB via testcontainers.
-func TestAuthService_DB(t *testing.T) {
-	dc := datacase.NewDataCase(t)
+// setupTest creates a test DB, repository, and auth service, returning them along with a cleanup function
+func setupTest(t *testing.T) (*AuthService, *pg.PostgresUserRepository, func()) {
+	t.Helper()
+	ctx := context.Background()
+
+	db, err := testdata.SetupTestDB(ctx)
+	require.NoError(t, err, "failed to setup test DB")
+
+	repo := pg.NewPostgresUserRepository(db.Pool)
+	jwt := token.NewJWTManager("secret")
+	svc := NewAuthService(repo, jwt)
+
+	cleanup := func() {
+		db.Teardown(ctx)
+	}
+
+	return svc, repo, cleanup
+}
+
+func TestAuthService(t *testing.T) {
 
 	t.Run("Register creates user and tokens", func(t *testing.T) {
-		dc.ResetOnCleanup(t)
-		repo := pg.NewPostgresUserRepository(dc.Pool())
-		jwt := token.NewJWTManager("secret")
-		svc := NewAuthService(repo, jwt)
 
+		// Setup test DB, repository, and auth service
+		svc, repo, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Call Register
 		access, refresh, err := svc.Register(context.Background(), "new@example.com", "pass")
-		if err != nil {
-			t.Fatalf("Register error: %v", err)
-		}
-		if access == "" || refresh == "" {
-			t.Fatalf("expected non-empty tokens")
-		}
+		require.NoError(t, err)
+		assert.NotEmpty(t, access)
+		assert.NotEmpty(t, refresh)
+
 		// Verify user persisted and password hashed
-		u, uerr := repo.GetByEmail(context.Background(), "new@example.com")
-		if uerr != nil || u == nil {
-			t.Fatalf("expected user to be created: %v", uerr)
-		}
-		if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte("pass")) != nil {
-			t.Fatalf("expected stored password to be a valid bcrypt hash")
-		}
+		u, err := repo.GetByEmail(context.Background(), "new@example.com")
+		require.NoError(t, err)
+		require.NotNil(t, u)
+		assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte("pass")))
 	})
 
 	t.Run("Register duplicate email", func(t *testing.T) {
-		dc.ResetOnCleanup(t)
-		repo := pg.NewPostgresUserRepository(dc.Pool())
-		jwt := token.NewJWTManager("secret")
-		svc := NewAuthService(repo, jwt)
 
+		// Setup test DB, repository, and auth service
+		svc, _, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Create initial user
 		_, _, _ = svc.Register(context.Background(), "dup@example.com", "pass")
 		_, _, err := svc.Register(context.Background(), "dup@example.com", "pass")
-		if err == nil || err != domain.ErrEmailExists {
-			t.Fatalf("expected ErrEmailExists, got: %v", err)
-		}
+		assert.ErrorIs(t, err, domain.ErrEmailExists)
 	})
 
 	t.Run("Login success", func(t *testing.T) {
-		dc.ResetOnCleanup(t)
-		repo := pg.NewPostgresUserRepository(dc.Pool())
-		jwt := token.NewJWTManager("secret")
-		svc := NewAuthService(repo, jwt)
 
+		// Setup test DB, repository, and auth service
+		svc, _, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Register user first to test login functionality with a real DB
 		_, _, _ = svc.Register(context.Background(), "u@example.com", "pass")
 		access, refresh, err := svc.Login(context.Background(), "u@example.com", "pass")
-		if err != nil {
-			t.Fatalf("Login error: %v", err)
-		}
-		if access == "" || refresh == "" {
-			t.Fatalf("expected non-empty tokens")
-		}
+
+		// Should succeed and return tokens
+		require.NoError(t, err)
+		assert.NotEmpty(t, access)
+		assert.NotEmpty(t, refresh)
 	})
 
 	t.Run("Login invalid password", func(t *testing.T) {
-		dc.ResetOnCleanup(t)
-		repo := pg.NewPostgresUserRepository(dc.Pool())
-		jwt := token.NewJWTManager("secret")
-		svc := NewAuthService(repo, jwt)
 
+		// Setup test DB, repository, and auth service
+		svc, _, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Register user first to test login with invalid password
 		_, _, _ = svc.Register(context.Background(), "u@example.com", "pass")
 		_, _, err := svc.Login(context.Background(), "u@example.com", "wrong")
-		if err == nil || err != domain.ErrInvalidCredentials {
-			t.Fatalf("expected ErrInvalidCredentials, got: %v", err)
-		}
+
+		// Should return invalid credentials error
+		assert.ErrorIs(t, err, domain.ErrInvalidCredentials)
 	})
 
 	t.Run("Login unknown email", func(t *testing.T) {
-		dc.ResetOnCleanup(t)
-		repo := pg.NewPostgresUserRepository(dc.Pool())
-		jwt := token.NewJWTManager("secret")
-		svc := NewAuthService(repo, jwt)
 
+		// Setup test DB, repository, and auth service
+		svc, _, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Attempt to login with non-existent email
 		_, _, err := svc.Login(context.Background(), "missing@example.com", "pass")
-		if err == nil || err != domain.ErrInvalidCredentials {
-			t.Fatalf("expected ErrInvalidCredentials, got: %v", err)
-		}
+
+		// Should return invalid credentials error
+		assert.ErrorIs(t, err, domain.ErrInvalidCredentials)
 	})
 }

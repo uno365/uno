@@ -2,89 +2,148 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
-	"io"
 	"net/http"
+	"net/http/httptest"
 	"testing"
-	"uno/services/auth/utils/testutils/conncase"
+	"uno/services/auth/utils/testdata"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+type authResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+}
+
+type errorResponse struct {
+	Error string `json:"error"`
+}
+
+// setupTest creates a test DB, starts a test server, and returns the server URL along with a cleanup function
+func setupTest(t *testing.T) (string, func()) {
+	t.Helper()
+	ctx := context.Background()
+
+	// Setup test DB
+	db, err := testdata.SetupTestDB(ctx)
+	require.NoError(t, err, "failed to setup test DB")
+
+	// Setup router with real DB connection
+	router := SetupAuthRouter(db.Pool, "test-secret")
+
+	// Start test server
+	server := httptest.NewServer(router)
+
+	// Define cleanup function to close server and teardown DB
+	cleanup := func() {
+		server.Close()
+		db.Teardown(ctx)
+	}
+
+	return server.URL, cleanup
+}
 
 // Integration test for the server wiring using a real Postgres DB.
 func TestServerIntegration(t *testing.T) {
-	cc := conncase.NewConnCase(t)
 
 	t.Run("Register endpoint success", func(t *testing.T) {
-		cc.ResetOnCleanup(t)
 
+		// Setup test server and DB
+		serverURL, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Make HTTP request to register endpoint
 		reqBody := map[string]string{"email": "alice@example.com", "password": "pass"}
-		b, _ := json.Marshal(reqBody)
-		resp, err := http.Post(cc.URL()+"/register", "application/json", bytes.NewReader(b))
-		if err != nil {
-			t.Fatalf("request error: %v", err)
-		}
+		reqBodyJSON, _ := json.Marshal(reqBody)
+		resp, err := http.Post(serverURL+"/register", "application/json", bytes.NewReader(reqBodyJSON))
+		require.NoError(t, err)
 		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("status: got %d want %d", resp.StatusCode, http.StatusOK)
-		}
+
+		// Verify response
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var body authResponse
+		err = json.NewDecoder(resp.Body).Decode(&body)
+		require.NoError(t, err)
+		assert.NotEmpty(t, body.AccessToken)
+		assert.NotEmpty(t, body.RefreshToken)
 	})
 
 	t.Run("Register duplicate email", func(t *testing.T) {
-		cc.ResetOnCleanup(t)
+
+		// Setup test server and DB
+		serverURL, cleanup := setupTest(t)
+		defer cleanup()
 
 		// pre-create via HTTP
 		reqBody := map[string]string{"email": "dup@example.com", "password": "pass"}
-		b, _ := json.Marshal(reqBody)
-		_, _ = http.Post(cc.URL()+"/register", "application/json", bytes.NewReader(b))
+		reqBodyJSON, _ := json.Marshal(reqBody)
+		_, _ = http.Post(serverURL+"/register", "application/json", bytes.NewReader(reqBodyJSON))
 
 		// second attempt should fail
-		resp, err := http.Post(cc.URL()+"/register", "application/json", bytes.NewReader(b))
-		if err != nil {
-			t.Fatalf("request error: %v", err)
-		}
+		resp, err := http.Post(serverURL+"/register", "application/json", bytes.NewReader(reqBodyJSON))
+		require.NoError(t, err)
 		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusBadRequest {
-			t.Fatalf("status: got %d want %d", resp.StatusCode, http.StatusBadRequest)
-		}
+
+		// Verify response
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+		var body errorResponse
+		err = json.NewDecoder(resp.Body).Decode(&body)
+		require.NoError(t, err)
+		assert.NotEmpty(t, body.Error)
 	})
 
 	t.Run("Login endpoint success", func(t *testing.T) {
-		cc.ResetOnCleanup(t)
+
+		// Setup test server and DB
+		serverURL, cleanup := setupTest(t)
+		defer cleanup()
 
 		// create a user via HTTP and ensure success
 		reqBody := map[string]string{"email": "bob@example.com", "password": "pass"}
-		b, _ := json.Marshal(reqBody)
-		regResp, regErr := http.Post(cc.URL()+"/register", "application/json", bytes.NewReader(b))
-		if regErr != nil {
-			t.Fatalf("register request error: %v", regErr)
-		}
+		reqBodyJSON, _ := json.Marshal(reqBody)
+		regResp, err := http.Post(serverURL+"/register", "application/json", bytes.NewReader(reqBodyJSON))
+		require.NoError(t, err)
 		defer regResp.Body.Close()
-		if regResp.StatusCode != http.StatusOK {
-			bodyBytes, _ := io.ReadAll(regResp.Body)
-			t.Fatalf("register status: got %d want %d; body: %s", regResp.StatusCode, http.StatusOK, string(bodyBytes))
-		}
+		require.Equal(t, http.StatusOK, regResp.StatusCode)
 
-		resp, err := http.Post(cc.URL()+"/login", "application/json", bytes.NewReader(b))
-		if err != nil {
-			t.Fatalf("request error: %v", err)
-		}
+		// Make HTTP request to login endpoint
+		resp, err := http.Post(serverURL+"/login", "application/json", bytes.NewReader(reqBodyJSON))
+		require.NoError(t, err)
 		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("status: got %d want %d", resp.StatusCode, http.StatusOK)
-		}
+
+		// Verify response
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var body authResponse
+		err = json.NewDecoder(resp.Body).Decode(&body)
+		require.NoError(t, err)
+		assert.NotEmpty(t, body.AccessToken)
+		assert.NotEmpty(t, body.RefreshToken)
 	})
 
 	t.Run("Login unauthorized", func(t *testing.T) {
-		cc.ResetOnCleanup(t)
+
+		// Setup test server and DB
+		serverURL, cleanup := setupTest(t)
+		defer cleanup()
 
 		reqBody := map[string]string{"email": "missing@example.com", "password": "pass"}
-		b, _ := json.Marshal(reqBody)
-		resp, err := http.Post(cc.URL()+"/login", "application/json", bytes.NewReader(b))
-		if err != nil {
-			t.Fatalf("request error: %v", err)
-		}
+		reqBodyJSON, _ := json.Marshal(reqBody)
+		resp, err := http.Post(serverURL+"/login", "application/json", bytes.NewReader(reqBodyJSON))
+		require.NoError(t, err)
 		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("status: got %d want %d", resp.StatusCode, http.StatusUnauthorized)
-		}
+
+		// Verify response
+		require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+
+		var body errorResponse
+		err = json.NewDecoder(resp.Body).Decode(&body)
+		require.NoError(t, err)
+		assert.NotEmpty(t, body.Error)
 	})
 }

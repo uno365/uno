@@ -1,6 +1,11 @@
 package domain
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestDomainErrors(t *testing.T) {
 	// test that all domain errors are non-nil and have expected messages
@@ -15,13 +20,9 @@ func TestDomainErrors(t *testing.T) {
 	}
 
 	for _, errorCase := range errorCases {
-		// check non-nil
-		if errorCase.errorType == nil {
-			t.Fatalf("%s: expected non-nil error", errorCase.errorName)
-		}
-		// check error message
-		if errorMessage := errorCase.errorType.Error(); errorMessage != errorCase.expectedErrorMessage {
-			t.Fatalf("%s: got %q, want %q", errorCase.errorName, errorMessage, errorCase.expectedErrorMessage)
-		}
+		t.Run(errorCase.errorName, func(t *testing.T) {
+			require.NotNil(t, errorCase.errorType)
+			assert.Equal(t, errorCase.expectedErrorMessage, errorCase.errorType.Error())
+		})
 	}
 }

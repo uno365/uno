@@ -1,7 +1,8 @@
-package testutils
+package testdata
 
 import (
 	"context"
+
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 

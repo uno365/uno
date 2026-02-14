@@ -1,9 +1,11 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
+
 	"uno/services/auth/internal/service"
+
+	"github.com/gin-gonic/gin"
 )
 
 // ================ Type and Constructor ================
@@ -19,8 +21,8 @@ func NewAuthHandler(s *service.AuthService) *AuthHandler {
 // ================ Registration ================
 
 type RegisterRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
 }
 
 type RegisterResponse struct {
@@ -28,24 +30,25 @@ type RegisterResponse struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-func (handler *AuthHandler) Register(responseWriter http.ResponseWriter, request *http.Request) {
-
+func (handler *AuthHandler) Register(gc *gin.Context) {
 	// Parse request body
 	var req RegisterRequest
-	json.NewDecoder(request.Body).Decode(&req)
+	if err := gc.ShouldBindJSON(&req); err != nil {
+		gc.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	// Call service layer to register user
-	access, refresh, err := handler.service.Register(request.Context(), req.Email, req.Password)
+	access, refresh, err := handler.service.Register(gc.Request.Context(), req.Email, req.Password)
 
 	// Handle errors
 	if err != nil {
-		http.Error(responseWriter, err.Error(), http.StatusBadRequest)
+		gc.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	// Write response
-	responseWriter.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(responseWriter).Encode(RegisterResponse{
+	gc.JSON(http.StatusOK, RegisterResponse{
 		AccessToken:  access,
 		RefreshToken: refresh,
 	})
@@ -54,8 +57,8 @@ func (handler *AuthHandler) Register(responseWriter http.ResponseWriter, request
 // ================ Login ================
 
 type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
 }
 
 type LoginResponse struct {
@@ -63,24 +66,25 @@ type LoginResponse struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-func (handler *AuthHandler) Login(responseWriter http.ResponseWriter, request *http.Request) {
-
+func (handler *AuthHandler) Login(gc *gin.Context) {
 	// Parse request body
 	var req LoginRequest
-	json.NewDecoder(request.Body).Decode(&req)
+	if err := gc.ShouldBindJSON(&req); err != nil {
+		gc.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	// Call service layer to login user
-	access, refresh, err := handler.service.Login(request.Context(), req.Email, req.Password)
+	access, refresh, err := handler.service.Login(gc.Request.Context(), req.Email, req.Password)
 
 	// Handle errors
 	if err != nil {
-		http.Error(responseWriter, err.Error(), http.StatusUnauthorized)
+		gc.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
 	// Write response
-	responseWriter.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(responseWriter).Encode(LoginResponse{
+	gc.JSON(http.StatusOK, LoginResponse{
 		AccessToken:  access,
 		RefreshToken: refresh,
 	})

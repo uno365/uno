@@ -6,20 +6,37 @@ import (
 
 	"uno/services/auth/internal/domain"
 	"uno/services/auth/internal/repository"
-	"uno/services/auth/utils/testutils/datacase"
+	"uno/services/auth/utils/testdata"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Compile-time check that PostgresUserRepository implements repository.UserRepository
 var _ repository.UserRepository = (*PostgresUserRepository)(nil)
 
+// setupTest creates a test DB and repository, returning them along with a cleanup function
+func setupTest(t *testing.T) (*PostgresUserRepository, func()) {
+	t.Helper()
+	ctx := context.Background()
+
+	db, err := testdata.SetupTestDB(ctx)
+	require.NoError(t, err, "failed to setup test DB")
+
+	repo := NewPostgresUserRepository(db.Pool)
+
+	cleanup := func() {
+		db.Teardown(ctx)
+	}
+
+	return repo, cleanup
+}
+
 func TestPostgresUserRepository(t *testing.T) {
-	// Spin up Postgres, run migrations, and get a pgx pool
-	dc := datacase.NewDataCase(t)
 
 	t.Run("Create and GetByEmail", func(t *testing.T) {
-		// Ensure DB resets after this subtest
-		dc.ResetOnCleanup(t)
-		repo := NewPostgresUserRepository(dc.Pool())
+		repo, cleanup := setupTest(t)
+		defer cleanup()
 
 		ctx := context.Background()
 
@@ -27,70 +44,47 @@ func TestPostgresUserRepository(t *testing.T) {
 			Email:        "alice@example.com",
 			PasswordHash: "hash123",
 		}
-		if err := repo.Create(ctx, u); err != nil {
-			t.Fatalf("Create failed: %v", err)
-		}
+		err := repo.Create(ctx, u)
+		require.NoError(t, err)
 
 		// Fetch by email and verify
 		got, err := repo.GetByEmail(ctx, u.Email)
-		if err != nil {
-			t.Fatalf("GetByEmail failed: %v", err)
-		}
+		require.NoError(t, err)
 
-		if got.ID == "" {
-			t.Fatalf("expected ID to be set")
-		}
-		if got.Email != u.Email {
-			t.Fatalf("expected email %q, got %q", u.Email, got.Email)
-		}
-		if got.PasswordHash != u.PasswordHash {
-			t.Fatalf("expected password hash %q, got %q", u.PasswordHash, got.PasswordHash)
-		}
-		if got.CreatedAt.IsZero() {
-			t.Fatalf("expected CreatedAt to be set")
-		}
+		assert.NotEmpty(t, got.ID)
+		assert.Equal(t, u.Email, got.Email)
+		assert.Equal(t, u.PasswordHash, got.PasswordHash)
+		assert.False(t, got.CreatedAt.IsZero())
 	})
 
 	t.Run("GetByEmail not found", func(t *testing.T) {
-		dc.ResetOnCleanup(t)
-		repo := NewPostgresUserRepository(dc.Pool())
+		repo, cleanup := setupTest(t)
+		defer cleanup()
+
 		ctx := context.Background()
 
 		_, err := repo.GetByEmail(ctx, "missing@example.com")
-		if err == nil {
-			t.Fatalf("expected error, got nil")
-		}
-		if err != domain.ErrUserNotFound {
-			t.Fatalf("expected ErrUserNotFound, got %v", err)
-		}
+		assert.ErrorIs(t, err, domain.ErrUserNotFound)
 	})
 
 	t.Run("Create and GetByID", func(t *testing.T) {
-		dc.ResetOnCleanup(t)
-		repo := NewPostgresUserRepository(dc.Pool())
+		repo, cleanup := setupTest(t)
+		defer cleanup()
+
 		ctx := context.Background()
 
 		u := &domain.User{
 			Email:        "bob@example.com",
 			PasswordHash: "hash456",
 		}
-		if err := repo.Create(ctx, u); err != nil {
-			t.Fatalf("Create failed: %v", err)
-		}
+		err := repo.Create(ctx, u)
+		require.NoError(t, err)
 
 		got, err := repo.GetByID(ctx, u.ID)
-		if err != nil {
-			t.Fatalf("GetByID failed: %v", err)
-		}
+		require.NoError(t, err)
 
-		if got.ID != u.ID {
-			t.Fatalf("expected ID %q, got %q", u.ID, got.ID)
-		}
-		if got.Email != u.Email {
-			t.Fatalf("expected email %q, got %q", u.Email, got.Email)
-		}
-		if got.PasswordHash != u.PasswordHash {
-			t.Fatalf("expected password hash %q, got %q", u.PasswordHash, got.PasswordHash)
-		}
+		assert.Equal(t, u.ID, got.ID)
+		assert.Equal(t, u.Email, got.Email)
+		assert.Equal(t, u.PasswordHash, got.PasswordHash)
 	})
 }
