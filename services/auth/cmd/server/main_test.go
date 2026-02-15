@@ -31,19 +31,22 @@ func setupTest(t *testing.T) (string, func()) {
 	db, err := testdata.SetupTestDB(ctx)
 	require.NoError(t, err, "failed to setup test DB")
 
-	// Setup router with real DB connection
-	router := SetupAuthRouter(db.Pool, "test-secret")
+	// Setup server with real DB connection
+	s := CreateNewServer()
+	s.DB = db.Pool
+	s.JWT_SECRET = "test-secret"
+	s.MountHandlers()
 
 	// Start test server
-	server := httptest.NewServer(router)
+	testServer := httptest.NewServer(s.Router)
 
 	// Define cleanup function to close server and teardown DB
 	cleanup := func() {
-		server.Close()
+		testServer.Close()
 		db.Teardown(ctx)
 	}
 
-	return server.URL, cleanup
+	return testServer.URL, cleanup
 }
 
 // Integration test for the server wiring using a real Postgres DB.

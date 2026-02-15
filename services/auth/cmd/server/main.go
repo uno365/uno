@@ -15,46 +15,33 @@ import (
 	"uno/services/auth/utils"
 
 	"github.com/go-chi/chi/v5"
-	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 
+	chimw "github.com/go-chi/chi/v5/middleware"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
-// SetupAuthRouter initializes and configures the Chi router with all auth routes.
-func SetupAuthRouter(db *pgxpool.Pool, secret string) *chi.Mux {
-
-	// Initialize repositories, services, and handlers
-	userRepo := pg.NewPostgresUserRepository(db)
-	jwtManager := token.NewJWTManager(secret)
-	authService := service.NewAuthService(userRepo, jwtManager)
-	authHandler := handler.NewAuthHandler(authService)
-
-	// Setup Chi router with middleware
-	router := chi.NewRouter()
-	router.Use(chimw.Logger)
-	router.Use(chimw.Recoverer)
-	router.Use(middleware.ErrorHandler)
-	router.Post("/register", authHandler.Register)
-	router.Post("/login", authHandler.Login)
-	return router
+type Server struct {
+	Router       *chi.Mux
+	DB           *pgxpool.Pool
+	DATABASE_URL string
+	JWT_SECRET   string
+	PORT         string
 }
 
-func main() {
+func CreateNewServer() *Server {
+	server := &Server{}
+	server.Router = chi.NewRouter()
+	return server
+}
 
+func (server *Server) MountEnv() {
 	// Load environment variables
 	err := godotenv.Load()
 	if err != nil {
 		slog.Default().Warn("Error loading .env file")
-	}
-
-	// Load DATABASE_URL
-	dbURL := os.Getenv("DATABASE_URL")
-
-	if dbURL == "" {
-		slog.Default().Error("DATABASE_URL is not set")
-		return
 	}
 
 	// Load JWT_SECRET
@@ -65,6 +52,8 @@ func main() {
 		return
 	}
 
+	server.JWT_SECRET = secret
+
 	// Load PORT
 	port := os.Getenv("PORT")
 
@@ -72,8 +61,14 @@ func main() {
 		port = "8080"
 	}
 
+	server.PORT = port
+
+}
+
+func (server *Server) MountDB() {
+
 	// Run database migrations
-	err = utils.RunMigrations("file://migrations", dbURL)
+	err := utils.RunMigrations("file://migrations", server.DATABASE_URL)
 	if err != nil {
 		slog.Default().Error("Failed to run migrations", "error", err)
 	}
@@ -81,18 +76,49 @@ func main() {
 	// Initialize database connection
 	ctx := context.Background()
 
-	db, err := pgxpool.New(ctx, dbURL)
+	db, err := pgxpool.New(ctx, server.DATABASE_URL)
+
 	if err != nil {
 		slog.Default().Error("Failed to connect to database", "error", err)
 	}
 
-	// Setup Chi router
-	router := SetupAuthRouter(db, secret)
+	server.DB = db
 
-	slog.Default().Info("Auth service running on :" + port)
+}
 
-	if err := http.ListenAndServe(":"+port, router); err != nil {
+func (server *Server) MountHandlers() {
+
+	// Initialize repositories, services, and handlers
+	userRepo := pg.NewPostgresUserRepository(server.DB)
+	jwtManager := token.NewJWTManager(server.JWT_SECRET)
+	authService := service.NewAuthService(userRepo, jwtManager)
+	authHandler := handler.NewAuthHandler(authService)
+
+	// middlewares
+	c := cors.New(cors.Options{AllowedOrigins: []string{"*"}})
+	server.Router.Use(c.Handler)
+	server.Router.Use(chimw.RequestID)
+	server.Router.Use(chimw.Logger)
+	server.Router.Use(chimw.Recoverer)
+	server.Router.Use(middleware.ErrorHandler)
+
+	// routes
+	server.Router.Post("/register", authHandler.Register)
+	server.Router.Post("/login", authHandler.Login)
+}
+
+func (server *Server) Run() {
+	slog.Default().Info("Auth service running on :" + server.PORT)
+
+	if err := http.ListenAndServe(":"+server.PORT, server.Router); err != nil {
 		slog.Default().Error("Failed to start server", "error", err)
 	}
+}
 
+func main() {
+	server := CreateNewServer()
+	server.MountEnv()
+	server.MountDB()
+	server.MountHandlers()
+	server.Run()
 }
