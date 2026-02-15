@@ -9,7 +9,7 @@ import (
 
 	"uno/services/auth/internal/handler"
 	"uno/services/auth/internal/middleware"
-	"uno/services/auth/internal/repository/pg"
+	"uno/services/auth/internal/repository"
 	"uno/services/auth/internal/service"
 	"uno/services/auth/internal/token"
 	"uno/services/auth/utils"
@@ -89,7 +89,7 @@ func (server *Server) MountDB() {
 func (server *Server) MountHandlers() {
 
 	// Initialize repositories, services, and handlers
-	userRepo := pg.NewPostgresUserRepository(server.DB)
+	userRepo := repository.NewUserRepository(server.DB)
 	jwtManager := token.NewJWTManager(server.JWT_SECRET)
 	authService := service.NewAuthService(userRepo, jwtManager)
 	authHandler := handler.NewAuthHandler(authService)

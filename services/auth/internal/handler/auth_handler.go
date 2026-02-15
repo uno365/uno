@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"uno/services/auth/internal/domain"
 	"uno/services/auth/internal/middleware"
 	"uno/services/auth/internal/service"
 )
@@ -23,22 +24,10 @@ func NewAuthHandler(s *service.AuthService) *AuthHandler {
 
 // ================ Registration ================
 
-// RegisterRequest represents the request body for user registration.
-type RegisterRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
-}
-
-// RegisterResponse represents the response body for successful registration.
-type RegisterResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-}
-
 // Register handles user registration requests.
 func (handler *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	// Parse request body
-	var req RegisterRequest
+	var req domain.RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
 		return
@@ -62,7 +51,7 @@ func (handler *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(RegisterResponse{
+	json.NewEncoder(w).Encode(domain.RegisterResponse{
 		AccessToken:  access,
 		RefreshToken: refresh,
 	})
@@ -70,22 +59,10 @@ func (handler *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 // ================ Login ================
 
-// LoginRequest represents the request body for user login.
-type LoginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
-}
-
-// LoginResponse represents the response body for successful login.
-type LoginResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-}
-
 // Login handles user login requests.
 func (handler *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Parse request body
-	var req LoginRequest
+	var req domain.LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
 		return
@@ -109,7 +86,7 @@ func (handler *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(LoginResponse{
+	json.NewEncoder(w).Encode(domain.LoginResponse{
 		AccessToken:  access,
 		RefreshToken: refresh,
 	})

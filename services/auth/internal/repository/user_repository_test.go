@@ -1,29 +1,25 @@
-package pg
+package repository
 
 import (
 	"context"
 	"testing"
 
 	"uno/services/auth/internal/domain"
-	"uno/services/auth/internal/repository"
 	"uno/services/auth/utils/testdata"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// Compile-time check that PostgresUserRepository implements repository.UserRepository
-var _ repository.UserRepository = (*PostgresUserRepository)(nil)
-
 // setupTest creates a test DB and repository, returning them along with a cleanup function
-func setupTest(t *testing.T) (*PostgresUserRepository, func()) {
+func setupTest(t *testing.T) (*UserRepository, func()) {
 	t.Helper()
 	ctx := context.Background()
 
 	db, err := testdata.SetupTestDB(ctx)
 	require.NoError(t, err, "failed to setup test DB")
 
-	repo := NewPostgresUserRepository(db.Pool)
+	repo := NewUserRepository(db.Pool)
 
 	cleanup := func() {
 		db.Teardown(ctx)
@@ -32,7 +28,7 @@ func setupTest(t *testing.T) (*PostgresUserRepository, func()) {
 	return repo, cleanup
 }
 
-func TestPostgresUserRepository(t *testing.T) {
+func TestUserRepository(t *testing.T) {
 
 	t.Run("Create and GetByEmail", func(t *testing.T) {
 		repo, cleanup := setupTest(t)

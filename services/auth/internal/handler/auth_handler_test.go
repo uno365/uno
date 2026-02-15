@@ -8,8 +8,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"uno/services/auth/internal/domain"
 	"uno/services/auth/internal/middleware"
-	"uno/services/auth/internal/repository/pg"
+	"uno/services/auth/internal/repository"
 	"uno/services/auth/internal/service"
 	"uno/services/auth/internal/token"
 	"uno/services/auth/utils/testdata"
@@ -29,7 +30,7 @@ func setupTest(t *testing.T) (*AuthHandler, *chi.Mux, func()) {
 	require.NoError(t, err, "failed to setup test DB")
 
 	// Initialize handler
-	repo := pg.NewPostgresUserRepository(db.Pool)
+	repo := repository.NewUserRepository(db.Pool)
 	jwt := token.NewJWTManager("secret")
 	svc := service.NewAuthService(repo, jwt)
 	h := NewAuthHandler(svc)
@@ -57,7 +58,7 @@ func TestAuthHandler_DB(t *testing.T) {
 		defer cleanup()
 
 		// Make HTTP request to register endpoint
-		reqBody := RegisterRequest{Email: "a@b.c", Password: "pass"}
+		reqBody := domain.RegisterRequest{Email: "a@b.c", Password: "pass"}
 		b, _ := json.Marshal(reqBody)
 		req := httptest.NewRequest(http.MethodPost, "/register", bytes.NewReader(b))
 		req.Header.Set("Content-Type", "application/json")
@@ -68,7 +69,7 @@ func TestAuthHandler_DB(t *testing.T) {
 		require.Equal(t, http.StatusCreated, rr.Code, "body: %s", rr.Body.String())
 
 		// Parse response and verify tokens are returned
-		var resp RegisterResponse
+		var resp domain.RegisterResponse
 		_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 		assert.NotEmpty(t, resp.AccessToken)
 		assert.NotEmpty(t, resp.RefreshToken)
@@ -81,7 +82,7 @@ func TestAuthHandler_DB(t *testing.T) {
 		defer cleanup()
 
 		// First register a user
-		reqBody := RegisterRequest{Email: "a@b.c", Password: "pass"}
+		reqBody := domain.RegisterRequest{Email: "a@b.c", Password: "pass"}
 		b, _ := json.Marshal(reqBody)
 
 		req1 := httptest.NewRequest(http.MethodPost, "/register", bytes.NewReader(b))
@@ -106,7 +107,7 @@ func TestAuthHandler_DB(t *testing.T) {
 		defer cleanup()
 
 		// create a user via HTTP
-		regBody := RegisterRequest{Email: "a@b.c", Password: "pass"}
+		regBody := domain.RegisterRequest{Email: "a@b.c", Password: "pass"}
 		b, _ := json.Marshal(regBody)
 		regReq := httptest.NewRequest(http.MethodPost, "/register", bytes.NewReader(b))
 		regReq.Header.Set("Content-Type", "application/json")
@@ -114,7 +115,7 @@ func TestAuthHandler_DB(t *testing.T) {
 		router.ServeHTTP(regRR, regReq)
 
 		// login
-		loginBody := LoginRequest{Email: "a@b.c", Password: "pass"}
+		loginBody := domain.LoginRequest{Email: "a@b.c", Password: "pass"}
 		lb, _ := json.Marshal(loginBody)
 		loginReq := httptest.NewRequest(http.MethodPost, "/login", bytes.NewReader(lb))
 		loginReq.Header.Set("Content-Type", "application/json")
@@ -124,7 +125,7 @@ func TestAuthHandler_DB(t *testing.T) {
 		require.Equal(t, http.StatusOK, loginRR.Code)
 
 		// Parse response and verify tokens are returned
-		var resp LoginResponse
+		var resp domain.LoginResponse
 		_ = json.Unmarshal(loginRR.Body.Bytes(), &resp)
 		assert.NotEmpty(t, resp.AccessToken)
 		assert.NotEmpty(t, resp.RefreshToken)
@@ -137,7 +138,7 @@ func TestAuthHandler_DB(t *testing.T) {
 		defer cleanup()
 
 		// Attempt to login with non-existent user
-		reqBody := LoginRequest{Email: "missing@b.c", Password: "pass"}
+		reqBody := domain.LoginRequest{Email: "missing@b.c", Password: "pass"}
 		b, _ := json.Marshal(reqBody)
 		req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewReader(b))
 		req.Header.Set("Content-Type", "application/json")

@@ -13,12 +13,12 @@ import (
 
 // AuthService handles user authentication operations including registration and login.
 type AuthService struct {
-	userRepo repository.UserRepository
+	userRepo *repository.UserRepository
 	jwt      *token.JWTManager
 }
 
 // NewAuthService creates a new AuthService with the given repository and JWT manager.
-func NewAuthService(repo repository.UserRepository, jwt *token.JWTManager) *AuthService {
+func NewAuthService(repo *repository.UserRepository, jwt *token.JWTManager) *AuthService {
 	return &AuthService{userRepo: repo, jwt: jwt}
 }
 

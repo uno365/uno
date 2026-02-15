@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 	"uno/services/auth/internal/domain"
-	"uno/services/auth/internal/repository/pg"
+	"uno/services/auth/internal/repository"
 	"uno/services/auth/internal/token"
 	"uno/services/auth/utils/testdata"
 
@@ -14,14 +14,14 @@ import (
 )
 
 // setupTest creates a test DB, repository, and auth service, returning them along with a cleanup function
-func setupTest(t *testing.T) (*AuthService, *pg.PostgresUserRepository, func()) {
+func setupTest(t *testing.T) (*AuthService, *repository.UserRepository, func()) {
 	t.Helper()
 	ctx := context.Background()
 
 	db, err := testdata.SetupTestDB(ctx)
 	require.NoError(t, err, "failed to setup test DB")
 
-	repo := pg.NewPostgresUserRepository(db.Pool)
+	repo := repository.NewUserRepository(db.Pool)
 	jwt := token.NewJWTManager("secret")
 	svc := NewAuthService(repo, jwt)
 
