@@ -73,17 +73,17 @@ func mapError(err error) (int, ErrorResponse) {
 	case errors.Is(err, domain.ErrInvalidCredentials):
 		return http.StatusUnauthorized, ErrorResponse{
 			Error:   "unauthorized",
-			Message: "Invalid email or password",
+			Message: domain.ErrInvalidCredentials.Error(),
 		}
 	case errors.Is(err, domain.ErrEmailExists):
 		return http.StatusConflict, ErrorResponse{
 			Error:   "conflict",
-			Message: "Email already registered",
+			Message: domain.ErrEmailExists.Error(),
 		}
 	case errors.Is(err, domain.ErrUserNotFound):
 		return http.StatusNotFound, ErrorResponse{
 			Error:   "not_found",
-			Message: "User not found",
+			Message: domain.ErrUserNotFound.Error(),
 		}
 	default:
 		return http.StatusInternalServerError, ErrorResponse{

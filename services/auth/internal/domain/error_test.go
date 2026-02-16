@@ -14,9 +14,9 @@ func TestDomainErrors(t *testing.T) {
 		errorType            error
 		expectedErrorMessage string
 	}{
-		{"invalid_credentials", ErrInvalidCredentials, "invalid credentials"},
-		{"email_exists", ErrEmailExists, "email already exists"},
-		{"user_not_found", ErrUserNotFound, "user not found"},
+		{"invalid_credentials", ErrInvalidCredentials, "Invalid email or password"},
+		{"email_exists", ErrEmailExists, "Email already registered"},
+		{"user_not_found", ErrUserNotFound, "User not found"},
 	}
 
 	for _, errorCase := range errorCases {
