@@ -75,6 +75,11 @@ func mapError(err error) (int, ErrorResponse) {
 			Error:   "unauthorized",
 			Message: domain.ErrInvalidCredentials.Error(),
 		}
+	case errors.Is(err, domain.ErrInvalidToken):
+		return http.StatusUnauthorized, ErrorResponse{
+			Error:   "unauthorized",
+			Message: domain.ErrInvalidToken.Error(),
+		}
 	case errors.Is(err, domain.ErrEmailExists):
 		return http.StatusConflict, ErrorResponse{
 			Error:   "conflict",

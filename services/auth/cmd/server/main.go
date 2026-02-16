@@ -105,6 +105,7 @@ func (server *Server) MountHandlers() {
 	// routes
 	server.Router.Post("/register", authHandler.Register)
 	server.Router.Post("/login", authHandler.Login)
+	server.Router.Post("/refresh", authHandler.Refresh)
 }
 
 func (server *Server) Run() {

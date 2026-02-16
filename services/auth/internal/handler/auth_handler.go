@@ -91,3 +91,38 @@ func (handler *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		RefreshToken: refresh,
 	})
 }
+
+// ================ Refresh Token ================
+
+// Refresh handles token refresh requests.
+func (handler *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	// Parse request body
+	var req domain.RefreshRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Validate required fields
+	if req.RefreshToken == "" {
+		http.Error(w, `{"error":"refresh_token is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Call service layer to refresh tokens
+	access, refresh, err := handler.service.RefreshToken(r.Context(), req.RefreshToken)
+
+	// Handle errors via middleware
+	if err != nil {
+		middleware.SetError(w, r, err)
+		return
+	}
+
+	// Write response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(domain.RefreshResponse{
+		AccessToken:  access,
+		RefreshToken: refresh,
+	})
+}

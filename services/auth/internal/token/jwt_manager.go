@@ -30,7 +30,7 @@ func (j *JWTManager) Generate(userID string, duration time.Duration) (string, er
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(duration)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			Issuer:    "workspace-auth",
+			Issuer:    "uno-auth",
 		},
 	}
 

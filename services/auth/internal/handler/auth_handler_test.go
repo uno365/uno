@@ -40,6 +40,7 @@ func setupTest(t *testing.T) (*AuthHandler, *chi.Mux, func()) {
 	router.Use(middleware.ErrorHandler)
 	router.Post("/register", h.Register)
 	router.Post("/login", h.Login)
+	router.Post("/refresh", h.Refresh)
 
 	cleanup := func() {
 		db.Teardown(ctx)
@@ -149,5 +150,79 @@ func TestAuthHandler_DB(t *testing.T) {
 
 		// Should return 401 Unauthorized
 		assert.Equal(t, http.StatusUnauthorized, rr.Code)
+	})
+
+	t.Run("Refresh success", func(t *testing.T) {
+
+		// Setup test DB, handler, and router
+		_, router, cleanup := setupTest(t)
+		defer cleanup()
+
+		// First register a user to get a valid refresh token
+		regBody := domain.RegisterRequest{Email: "refresh@b.c", Password: "pass"}
+		b, _ := json.Marshal(regBody)
+		regReq := httptest.NewRequest(http.MethodPost, "/register", bytes.NewReader(b))
+		regReq.Header.Set("Content-Type", "application/json")
+		regRR := httptest.NewRecorder()
+		router.ServeHTTP(regRR, regReq)
+		require.Equal(t, http.StatusCreated, regRR.Code)
+
+		// Parse refresh token from registration response
+		var regResp domain.RegisterResponse
+		_ = json.Unmarshal(regRR.Body.Bytes(), &regResp)
+
+		// Call refresh endpoint
+		refreshBody := domain.RefreshRequest{RefreshToken: regResp.RefreshToken}
+		rb, _ := json.Marshal(refreshBody)
+		refreshReq := httptest.NewRequest(http.MethodPost, "/refresh", bytes.NewReader(rb))
+		refreshReq.Header.Set("Content-Type", "application/json")
+		refreshRR := httptest.NewRecorder()
+		router.ServeHTTP(refreshRR, refreshReq)
+
+		require.Equal(t, http.StatusOK, refreshRR.Code)
+
+		// Parse response and verify new tokens are returned
+		var resp domain.RefreshResponse
+		_ = json.Unmarshal(refreshRR.Body.Bytes(), &resp)
+		assert.NotEmpty(t, resp.AccessToken)
+		assert.NotEmpty(t, resp.RefreshToken)
+	})
+
+	t.Run("Refresh invalid token", func(t *testing.T) {
+
+		// Setup test DB, handler, and router
+		_, router, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Attempt to refresh with invalid token
+		refreshBody := domain.RefreshRequest{RefreshToken: "invalid-token"}
+		b, _ := json.Marshal(refreshBody)
+		req := httptest.NewRequest(http.MethodPost, "/refresh", bytes.NewReader(b))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+
+		router.ServeHTTP(rr, req)
+
+		// Should return 401 Unauthorized
+		assert.Equal(t, http.StatusUnauthorized, rr.Code)
+	})
+
+	t.Run("Refresh missing token", func(t *testing.T) {
+
+		// Setup test DB, handler, and router
+		_, router, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Attempt to refresh with missing token field
+		refreshBody := domain.RefreshRequest{RefreshToken: ""}
+		b, _ := json.Marshal(refreshBody)
+		req := httptest.NewRequest(http.MethodPost, "/refresh", bytes.NewReader(b))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+
+		router.ServeHTTP(rr, req)
+
+		// Should return 400 Bad Request
+		assert.Equal(t, http.StatusBadRequest, rr.Code)
 	})
 }

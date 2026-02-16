@@ -11,4 +11,6 @@ var (
 	ErrEmailExists = errors.New("Email already registered")
 	// ErrUserNotFound is returned when a user cannot be found.
 	ErrUserNotFound = errors.New("User not found")
+	// ErrInvalidToken is returned when a token is invalid or expired.
+	ErrInvalidToken = errors.New("Invalid or expired token")
 )

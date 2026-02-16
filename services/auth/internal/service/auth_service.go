@@ -68,3 +68,24 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (string
 
 	return accessToken, refreshToken, nil
 }
+
+// RefreshToken validates a refresh token and returns new access and refresh tokens.
+func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (string, string, error) {
+	// Verify the refresh token
+	claims, err := s.jwt.Verify(refreshToken)
+	if err != nil {
+		return "", "", domain.ErrInvalidToken
+	}
+
+	// Verify user still exists
+	_, err = s.userRepo.GetByID(ctx, claims.UserID)
+	if err != nil {
+		return "", "", domain.ErrInvalidToken
+	}
+
+	// Generate new tokens
+	newAccessToken, _ := s.jwt.Generate(claims.UserID, 15*time.Minute)
+	newRefreshToken, _ := s.jwt.Generate(claims.UserID, 7*24*time.Hour)
+
+	return newAccessToken, newRefreshToken, nil
+}
