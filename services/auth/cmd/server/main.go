@@ -31,6 +31,7 @@ type Server struct {
 	JWT_SECRET   string
 	PORT         string
 	CORS_ORIGINS []string
+	TRUST_PROXY  bool
 }
 
 func CreateNewServer() *Server {
@@ -77,6 +78,10 @@ func (server *Server) MountEnv() {
 		}
 	}
 
+	// Load TRUST_PROXY (set to "true" when behind a reverse proxy)
+	// Default to false for security
+	server.TRUST_PROXY = os.Getenv("TRUST_PROXY") == "true"
+
 }
 
 func (server *Server) MountDB() {
@@ -107,7 +112,7 @@ func (server *Server) MountHandlers() {
 	sessionRepo := repository.NewSessionRepository(server.DB)
 	jwtManager := token.NewJWTManager(server.JWT_SECRET)
 	authService := service.NewAuthService(userRepo, sessionRepo, jwtManager)
-	authHandler := handler.NewAuthHandler(authService)
+	authHandler := handler.NewAuthHandler(authService, server.TRUST_PROXY)
 
 	// middlewares
 	c := cors.New(cors.Options{

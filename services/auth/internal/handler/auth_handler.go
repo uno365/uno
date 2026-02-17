@@ -22,12 +22,18 @@ const (
 
 // AuthHandler handles HTTP requests for authentication operations.
 type AuthHandler struct {
-	service *service.AuthService
+	service           *service.AuthService
+	trustProxyHeaders bool
 }
 
 // NewAuthHandler creates a new AuthHandler with the given AuthService.
-func NewAuthHandler(s *service.AuthService) *AuthHandler {
-	return &AuthHandler{service: s}
+// Set trustProxyHeaders to true only when running behind a properly configured
+// reverse proxy that overwrites X-Forwarded-For and X-Real-IP headers.
+func NewAuthHandler(s *service.AuthService, trustProxyHeaders bool) *AuthHandler {
+	return &AuthHandler{
+		service:           s,
+		trustProxyHeaders: trustProxyHeaders,
+	}
 }
 
 // ================ Helper Functions ================
@@ -86,21 +92,25 @@ func clearRefreshTokenCookie(w http.ResponseWriter, r *http.Request) {
 }
 
 // getClientInfo extracts user agent and IP address from the request.
-// Note: X-Forwarded-For and X-Real-IP headers can be spoofed by clients.
-// Only trust these headers when running behind a properly configured reverse proxy
-// that overwrites these headers.
-func getClientInfo(r *http.Request) (userAgent, ipAddress string) {
+// When trustProxyHeaders is false, only r.RemoteAddr is used for the IP address.
+// When trustProxyHeaders is true, X-Forwarded-For and X-Real-IP headers are trusted.
+// Only enable trustProxyHeaders when running behind a properly configured reverse proxy.
+func (handler *AuthHandler) getClientInfo(r *http.Request) (userAgent, ipAddress string) {
 	userAgent = r.UserAgent()
 
-	// Try X-Forwarded-For first (for proxies), then X-Real-IP, then RemoteAddr
-	// X-Forwarded-For can contain multiple IPs: "client, proxy1, proxy2"
-	// Extract only the first (original client) IP
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		ipAddress = strings.TrimSpace(strings.Split(xff, ",")[0])
+	// Only trust proxy headers if explicitly configured
+	if handler.trustProxyHeaders {
+		// X-Forwarded-For can contain multiple IPs: "client, proxy1, proxy2"
+		// Extract only the first (original client) IP
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			ipAddress = strings.TrimSpace(strings.Split(xff, ",")[0])
+		}
+		if ipAddress == "" {
+			ipAddress = r.Header.Get("X-Real-IP")
+		}
 	}
-	if ipAddress == "" {
-		ipAddress = r.Header.Get("X-Real-IP")
-	}
+
+	// Fall back to RemoteAddr
 	if ipAddress == "" {
 		ipAddress = r.RemoteAddr
 	}
@@ -126,7 +136,7 @@ func (handler *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get client info
-	userAgent, ipAddress := getClientInfo(r)
+	userAgent, ipAddress := handler.getClientInfo(r)
 
 	// Call service layer to register user
 	access, refresh, err := handler.service.Register(r.Context(), req.Email, req.Password, userAgent, ipAddress)
@@ -166,7 +176,7 @@ func (handler *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get client info
-	userAgent, ipAddress := getClientInfo(r)
+	userAgent, ipAddress := handler.getClientInfo(r)
 
 	// Call service layer to login user
 	access, refresh, err := handler.service.Login(r.Context(), req.Email, req.Password, userAgent, ipAddress)
@@ -200,7 +210,7 @@ func (handler *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get client info
-	userAgent, ipAddress := getClientInfo(r)
+	userAgent, ipAddress := handler.getClientInfo(r)
 
 	// Call service layer to refresh tokens
 	access, refresh, err := handler.service.RefreshToken(r.Context(), cookie.Value, userAgent, ipAddress)

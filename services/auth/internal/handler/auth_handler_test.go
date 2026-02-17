@@ -34,7 +34,7 @@ func setupTest(t *testing.T) (*AuthHandler, *chi.Mux, func()) {
 	sessionRepo := repository.NewSessionRepository(db.Pool)
 	jwt := token.NewJWTManager("secret")
 	svc := service.NewAuthService(userRepo, sessionRepo, jwt)
-	h := NewAuthHandler(svc)
+	h := NewAuthHandler(svc, false) // Don't trust proxy headers in tests
 
 	// Setup router
 	router := chi.NewRouter()

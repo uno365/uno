@@ -55,9 +55,9 @@ func (s *AuthService) Register(ctx context.Context, email, password, userAgent, 
 		PasswordHash: string(hash),
 	}
 
-	err = s.userRepo.Create(ctx, user)
-	if err != nil {
-		return "", "", err
+	createErr := s.userRepo.Create(ctx, user)
+	if createErr != nil {
+		return "", "", createErr
 	}
 
 	// Generate tokens and create session
