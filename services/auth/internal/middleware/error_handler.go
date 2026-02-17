@@ -80,6 +80,16 @@ func mapError(err error) (int, ErrorResponse) {
 			Error:   "unauthorized",
 			Message: domain.ErrInvalidToken.Error(),
 		}
+	case errors.Is(err, domain.ErrSessionRevoked):
+		return http.StatusUnauthorized, ErrorResponse{
+			Error:   "unauthorized",
+			Message: domain.ErrSessionRevoked.Error(),
+		}
+	case errors.Is(err, domain.ErrTokenReuse):
+		return http.StatusUnauthorized, ErrorResponse{
+			Error:   "unauthorized",
+			Message: domain.ErrTokenReuse.Error(),
+		}
 	case errors.Is(err, domain.ErrEmailExists):
 		return http.StatusConflict, ErrorResponse{
 			Error:   "conflict",

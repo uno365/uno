@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 
 	"uno/services/auth/internal/handler"
 	"uno/services/auth/internal/middleware"
@@ -29,6 +30,7 @@ type Server struct {
 	DATABASE_URL string
 	JWT_SECRET   string
 	PORT         string
+	CORS_ORIGINS []string
 }
 
 func CreateNewServer() *Server {
@@ -63,6 +65,18 @@ func (server *Server) MountEnv() {
 
 	server.PORT = port
 
+	// Load CORS_ORIGINS (comma-separated list of allowed origins)
+	// Default to localhost for development
+	corsOrigins := os.Getenv("CORS_ORIGINS")
+	if corsOrigins == "" {
+		server.CORS_ORIGINS = []string{"http://localhost:3000", "http://localhost:5173"}
+	} else {
+		server.CORS_ORIGINS = strings.Split(corsOrigins, ",")
+		for i := range server.CORS_ORIGINS {
+			server.CORS_ORIGINS[i] = strings.TrimSpace(server.CORS_ORIGINS[i])
+		}
+	}
+
 }
 
 func (server *Server) MountDB() {
@@ -90,12 +104,19 @@ func (server *Server) MountHandlers() {
 
 	// Initialize repositories, services, and handlers
 	userRepo := repository.NewUserRepository(server.DB)
+	sessionRepo := repository.NewSessionRepository(server.DB)
 	jwtManager := token.NewJWTManager(server.JWT_SECRET)
-	authService := service.NewAuthService(userRepo, jwtManager)
+	authService := service.NewAuthService(userRepo, sessionRepo, jwtManager)
 	authHandler := handler.NewAuthHandler(authService)
 
 	// middlewares
-	c := cors.New(cors.Options{AllowedOrigins: []string{"*"}})
+	c := cors.New(cors.Options{
+		AllowedOrigins:   server.CORS_ORIGINS,
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	})
 	server.Router.Use(c.Handler)
 	server.Router.Use(chimw.RequestID)
 	server.Router.Use(chimw.Logger)
@@ -106,6 +127,7 @@ func (server *Server) MountHandlers() {
 	server.Router.Post("/register", authHandler.Register)
 	server.Router.Post("/login", authHandler.Login)
 	server.Router.Post("/refresh", authHandler.Refresh)
+	server.Router.Post("/logout", authHandler.Logout)
 }
 
 func (server *Server) Run() {

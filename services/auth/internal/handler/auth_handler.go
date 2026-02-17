@@ -3,11 +3,19 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
+	"strings"
+	"time"
 
 	"uno/services/auth/internal/domain"
 	"uno/services/auth/internal/middleware"
 	"uno/services/auth/internal/service"
+)
+
+const (
+	refreshTokenCookieName = "refresh_token"
+	refreshTokenMaxAge     = 7 * 24 * 60 * 60 // 7 days in seconds
 )
 
 // ================ Type and Constructor ================
@@ -20,6 +28,84 @@ type AuthHandler struct {
 // NewAuthHandler creates a new AuthHandler with the given AuthService.
 func NewAuthHandler(s *service.AuthService) *AuthHandler {
 	return &AuthHandler{service: s}
+}
+
+// ================ Helper Functions ================
+
+// isSecureRequest determines if the request is over a secure connection.
+// Returns true for HTTPS connections or when behind a proxy with X-Forwarded-Proto: https.
+// Returns false for localhost/127.0.0.1 to support local development over HTTP.
+func isSecureRequest(r *http.Request) bool {
+	// Check if behind a proxy reporting HTTPS
+	if r.Header.Get("X-Forwarded-Proto") == "https" {
+		return true
+	}
+
+	// Check if direct TLS connection
+	if r.TLS != nil {
+		return true
+	}
+
+	// Allow insecure cookies for localhost development
+	host := r.Host
+	if host == "localhost" || host == "127.0.0.1" ||
+		len(host) > 10 && host[:10] == "localhost:" ||
+		len(host) > 10 && host[:10] == "127.0.0.1:" {
+		return false
+	}
+
+	// Default to secure for production
+	return true
+}
+
+// setRefreshTokenCookie sets the refresh token as an HTTP-only secure cookie.
+func setRefreshTokenCookie(w http.ResponseWriter, r *http.Request, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshTokenCookieName,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   refreshTokenMaxAge,
+		HttpOnly: true,
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// clearRefreshTokenCookie removes the refresh token cookie.
+func clearRefreshTokenCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshTokenCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteStrictMode,
+		Expires:  time.Unix(0, 0),
+	})
+}
+
+// getClientInfo extracts user agent and IP address from the request.
+// Note: X-Forwarded-For and X-Real-IP headers can be spoofed by clients.
+// Only trust these headers when running behind a properly configured reverse proxy
+// that overwrites these headers.
+func getClientInfo(r *http.Request) (userAgent, ipAddress string) {
+	userAgent = r.UserAgent()
+
+	// Try X-Forwarded-For first (for proxies), then X-Real-IP, then RemoteAddr
+	// X-Forwarded-For can contain multiple IPs: "client, proxy1, proxy2"
+	// Extract only the first (original client) IP
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		ipAddress = strings.TrimSpace(strings.Split(xff, ",")[0])
+	}
+	if ipAddress == "" {
+		ipAddress = r.Header.Get("X-Real-IP")
+	}
+	if ipAddress == "" {
+		ipAddress = r.RemoteAddr
+	}
+
+	return userAgent, ipAddress
 }
 
 // ================ Registration ================
@@ -39,8 +125,11 @@ func (handler *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get client info
+	userAgent, ipAddress := getClientInfo(r)
+
 	// Call service layer to register user
-	access, refresh, err := handler.service.Register(r.Context(), req.Email, req.Password)
+	access, refresh, err := handler.service.Register(r.Context(), req.Email, req.Password, userAgent, ipAddress)
 
 	// Handle errors via middleware
 	if err != nil {
@@ -48,12 +137,14 @@ func (handler *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Set refresh token cookie
+	setRefreshTokenCookie(w, r, refresh)
+
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(domain.RegisterResponse{
-		AccessToken:  access,
-		RefreshToken: refresh,
+		AccessToken: access,
 	})
 }
 
@@ -74,8 +165,11 @@ func (handler *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get client info
+	userAgent, ipAddress := getClientInfo(r)
+
 	// Call service layer to login user
-	access, refresh, err := handler.service.Login(r.Context(), req.Email, req.Password)
+	access, refresh, err := handler.service.Login(r.Context(), req.Email, req.Password, userAgent, ipAddress)
 
 	// Handle errors via middleware
 	if err != nil {
@@ -83,12 +177,14 @@ func (handler *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Set refresh token cookie
+	setRefreshTokenCookie(w, r, refresh)
+
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(domain.LoginResponse{
-		AccessToken:  access,
-		RefreshToken: refresh,
+		AccessToken: access,
 	})
 }
 
@@ -96,33 +192,59 @@ func (handler *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 // Refresh handles token refresh requests.
 func (handler *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
-	// Parse request body
-	var req domain.RefreshRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+	// Read refresh token from cookie
+	cookie, err := r.Cookie(refreshTokenCookieName)
+	if err != nil || cookie.Value == "" {
+		http.Error(w, `{"error":"refresh token is required"}`, http.StatusBadRequest)
 		return
 	}
 
-	// Validate required fields
-	if req.RefreshToken == "" {
-		http.Error(w, `{"error":"refresh_token is required"}`, http.StatusBadRequest)
-		return
-	}
+	// Get client info
+	userAgent, ipAddress := getClientInfo(r)
 
 	// Call service layer to refresh tokens
-	access, refresh, err := handler.service.RefreshToken(r.Context(), req.RefreshToken)
+	access, refresh, err := handler.service.RefreshToken(r.Context(), cookie.Value, userAgent, ipAddress)
 
 	// Handle errors via middleware
 	if err != nil {
+		// Clear the invalid cookie
+		clearRefreshTokenCookie(w, r)
 		middleware.SetError(w, r, err)
 		return
 	}
+
+	// Set new refresh token cookie (rotation)
+	setRefreshTokenCookie(w, r, refresh)
 
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(domain.RefreshResponse{
-		AccessToken:  access,
-		RefreshToken: refresh,
+		AccessToken: access,
 	})
+}
+
+// ================ Logout ================
+
+// Logout handles user logout requests by revoking the session and clearing the cookie.
+func (handler *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	// Read refresh token from cookie
+	cookie, err := r.Cookie(refreshTokenCookieName)
+	refreshToken := ""
+	if err == nil && cookie.Value != "" {
+		refreshToken = cookie.Value
+	}
+
+	// Call service layer to logout (revoke session)
+	if err := handler.service.Logout(r.Context(), refreshToken); err != nil {
+		slog.Error("failed to revoke session during logout", "error", err)
+	}
+
+	// Clear the refresh token cookie
+	clearRefreshTokenCookie(w, r)
+
+	// Write response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "logged out successfully"})
 }

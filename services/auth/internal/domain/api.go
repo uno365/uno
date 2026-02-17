@@ -8,8 +8,7 @@ type RegisterRequest struct {
 
 // RegisterResponse represents the response body for successful registration.
 type RegisterResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	AccessToken string `json:"access_token"`
 }
 
 // LoginRequest represents the request body for user login.
@@ -20,17 +19,10 @@ type LoginRequest struct {
 
 // LoginResponse represents the response body for successful login.
 type LoginResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-}
-
-// RefreshRequest represents the request body for token refresh.
-type RefreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
+	AccessToken string `json:"access_token"`
 }
 
 // RefreshResponse represents the response body for successful token refresh.
 type RefreshResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	AccessToken string `json:"access_token"`
 }

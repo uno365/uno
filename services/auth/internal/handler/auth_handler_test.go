@@ -30,9 +30,10 @@ func setupTest(t *testing.T) (*AuthHandler, *chi.Mux, func()) {
 	require.NoError(t, err, "failed to setup test DB")
 
 	// Initialize handler
-	repo := repository.NewUserRepository(db.Pool)
+	userRepo := repository.NewUserRepository(db.Pool)
+	sessionRepo := repository.NewSessionRepository(db.Pool)
 	jwt := token.NewJWTManager("secret")
-	svc := service.NewAuthService(repo, jwt)
+	svc := service.NewAuthService(userRepo, sessionRepo, jwt)
 	h := NewAuthHandler(svc)
 
 	// Setup router
@@ -41,12 +42,23 @@ func setupTest(t *testing.T) (*AuthHandler, *chi.Mux, func()) {
 	router.Post("/register", h.Register)
 	router.Post("/login", h.Login)
 	router.Post("/refresh", h.Refresh)
+	router.Post("/logout", h.Logout)
 
 	cleanup := func() {
 		db.Teardown(ctx)
 	}
 
 	return h, router, cleanup
+}
+
+// getRefreshTokenCookie extracts the refresh_token cookie from the response
+func getRefreshTokenCookie(rr *httptest.ResponseRecorder) string {
+	for _, cookie := range rr.Result().Cookies() {
+		if cookie.Name == "refresh_token" {
+			return cookie.Value
+		}
+	}
+	return ""
 }
 
 // Integration tests using a real Postgres DB via testcontainers.
@@ -69,11 +81,14 @@ func TestAuthHandler_DB(t *testing.T) {
 		router.ServeHTTP(rr, req)
 		require.Equal(t, http.StatusCreated, rr.Code, "body: %s", rr.Body.String())
 
-		// Parse response and verify tokens are returned
+		// Parse response and verify access token is returned
 		var resp domain.RegisterResponse
 		_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 		assert.NotEmpty(t, resp.AccessToken)
-		assert.NotEmpty(t, resp.RefreshToken)
+
+		// Verify refresh token is set in cookie
+		refreshCookie := getRefreshTokenCookie(rr)
+		assert.NotEmpty(t, refreshCookie, "refresh_token cookie should be set")
 	})
 
 	t.Run("Register email exists", func(t *testing.T) {
@@ -125,11 +140,14 @@ func TestAuthHandler_DB(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, loginRR.Code)
 
-		// Parse response and verify tokens are returned
+		// Parse response and verify access token is returned
 		var resp domain.LoginResponse
 		_ = json.Unmarshal(loginRR.Body.Bytes(), &resp)
 		assert.NotEmpty(t, resp.AccessToken)
-		assert.NotEmpty(t, resp.RefreshToken)
+
+		// Verify refresh token is set in cookie
+		refreshCookie := getRefreshTokenCookie(loginRR)
+		assert.NotEmpty(t, refreshCookie, "refresh_token cookie should be set")
 	})
 
 	t.Run("Login unauthorized", func(t *testing.T) {
@@ -167,25 +185,27 @@ func TestAuthHandler_DB(t *testing.T) {
 		router.ServeHTTP(regRR, regReq)
 		require.Equal(t, http.StatusCreated, regRR.Code)
 
-		// Parse refresh token from registration response
-		var regResp domain.RegisterResponse
-		_ = json.Unmarshal(regRR.Body.Bytes(), &regResp)
+		// Get refresh token from cookie
+		refreshToken := getRefreshTokenCookie(regRR)
+		require.NotEmpty(t, refreshToken)
 
-		// Call refresh endpoint
-		refreshBody := domain.RefreshRequest{RefreshToken: regResp.RefreshToken}
-		rb, _ := json.Marshal(refreshBody)
-		refreshReq := httptest.NewRequest(http.MethodPost, "/refresh", bytes.NewReader(rb))
-		refreshReq.Header.Set("Content-Type", "application/json")
+		// Call refresh endpoint with cookie
+		refreshReq := httptest.NewRequest(http.MethodPost, "/refresh", nil)
+		refreshReq.AddCookie(&http.Cookie{Name: "refresh_token", Value: refreshToken})
 		refreshRR := httptest.NewRecorder()
 		router.ServeHTTP(refreshRR, refreshReq)
 
 		require.Equal(t, http.StatusOK, refreshRR.Code)
 
-		// Parse response and verify new tokens are returned
+		// Parse response and verify new access token is returned
 		var resp domain.RefreshResponse
 		_ = json.Unmarshal(refreshRR.Body.Bytes(), &resp)
 		assert.NotEmpty(t, resp.AccessToken)
-		assert.NotEmpty(t, resp.RefreshToken)
+
+		// Verify new refresh token is set in cookie (rotation)
+		newRefreshCookie := getRefreshTokenCookie(refreshRR)
+		assert.NotEmpty(t, newRefreshCookie, "new refresh_token cookie should be set")
+		assert.NotEqual(t, refreshToken, newRefreshCookie, "refresh token should be rotated")
 	})
 
 	t.Run("Refresh invalid token", func(t *testing.T) {
@@ -195,10 +215,8 @@ func TestAuthHandler_DB(t *testing.T) {
 		defer cleanup()
 
 		// Attempt to refresh with invalid token
-		refreshBody := domain.RefreshRequest{RefreshToken: "invalid-token"}
-		b, _ := json.Marshal(refreshBody)
-		req := httptest.NewRequest(http.MethodPost, "/refresh", bytes.NewReader(b))
-		req.Header.Set("Content-Type", "application/json")
+		req := httptest.NewRequest(http.MethodPost, "/refresh", nil)
+		req.AddCookie(&http.Cookie{Name: "refresh_token", Value: "invalid-token"})
 		rr := httptest.NewRecorder()
 
 		router.ServeHTTP(rr, req)
@@ -207,22 +225,102 @@ func TestAuthHandler_DB(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, rr.Code)
 	})
 
-	t.Run("Refresh missing token", func(t *testing.T) {
+	t.Run("Refresh missing cookie", func(t *testing.T) {
 
 		// Setup test DB, handler, and router
 		_, router, cleanup := setupTest(t)
 		defer cleanup()
 
-		// Attempt to refresh with missing token field
-		refreshBody := domain.RefreshRequest{RefreshToken: ""}
-		b, _ := json.Marshal(refreshBody)
-		req := httptest.NewRequest(http.MethodPost, "/refresh", bytes.NewReader(b))
-		req.Header.Set("Content-Type", "application/json")
+		// Attempt to refresh without cookie
+		req := httptest.NewRequest(http.MethodPost, "/refresh", nil)
 		rr := httptest.NewRecorder()
 
 		router.ServeHTTP(rr, req)
 
 		// Should return 400 Bad Request
 		assert.Equal(t, http.StatusBadRequest, rr.Code)
+	})
+
+	t.Run("Logout success", func(t *testing.T) {
+
+		// Setup test DB, handler, and router
+		_, router, cleanup := setupTest(t)
+		defer cleanup()
+
+		// First register a user to get a valid refresh token
+		regBody := domain.RegisterRequest{Email: "logout@b.c", Password: "pass"}
+		b, _ := json.Marshal(regBody)
+		regReq := httptest.NewRequest(http.MethodPost, "/register", bytes.NewReader(b))
+		regReq.Header.Set("Content-Type", "application/json")
+		regRR := httptest.NewRecorder()
+		router.ServeHTTP(regRR, regReq)
+		require.Equal(t, http.StatusCreated, regRR.Code)
+
+		// Get refresh token from cookie
+		refreshToken := getRefreshTokenCookie(regRR)
+		require.NotEmpty(t, refreshToken)
+
+		// Logout
+		logoutReq := httptest.NewRequest(http.MethodPost, "/logout", nil)
+		logoutReq.AddCookie(&http.Cookie{Name: "refresh_token", Value: refreshToken})
+		logoutRR := httptest.NewRecorder()
+		router.ServeHTTP(logoutRR, logoutReq)
+
+		require.Equal(t, http.StatusOK, logoutRR.Code)
+
+		// Verify cookie is cleared (MaxAge < 0)
+		for _, cookie := range logoutRR.Result().Cookies() {
+			if cookie.Name == "refresh_token" {
+				assert.True(t, cookie.MaxAge < 0, "cookie should be cleared")
+			}
+		}
+
+		// Attempt to refresh after logout should fail
+		refreshReq := httptest.NewRequest(http.MethodPost, "/refresh", nil)
+		refreshReq.AddCookie(&http.Cookie{Name: "refresh_token", Value: refreshToken})
+		refreshRR := httptest.NewRecorder()
+		router.ServeHTTP(refreshRR, refreshReq)
+
+		assert.Equal(t, http.StatusUnauthorized, refreshRR.Code, "refresh after logout should fail")
+	})
+
+	t.Run("Token rotation prevents reuse", func(t *testing.T) {
+
+		// Setup test DB, handler, and router
+		_, router, cleanup := setupTest(t)
+		defer cleanup()
+
+		// First register a user to get a valid refresh token
+		regBody := domain.RegisterRequest{Email: "reuse@b.c", Password: "pass"}
+		b, _ := json.Marshal(regBody)
+		regReq := httptest.NewRequest(http.MethodPost, "/register", bytes.NewReader(b))
+		regReq.Header.Set("Content-Type", "application/json")
+		regRR := httptest.NewRecorder()
+		router.ServeHTTP(regRR, regReq)
+		require.Equal(t, http.StatusCreated, regRR.Code)
+
+		// Get original refresh token
+		originalToken := getRefreshTokenCookie(regRR)
+		require.NotEmpty(t, originalToken)
+
+		// First refresh should succeed
+		refreshReq1 := httptest.NewRequest(http.MethodPost, "/refresh", nil)
+		refreshReq1.AddCookie(&http.Cookie{Name: "refresh_token", Value: originalToken})
+		refreshRR1 := httptest.NewRecorder()
+		router.ServeHTTP(refreshRR1, refreshReq1)
+		require.Equal(t, http.StatusOK, refreshRR1.Code)
+
+		// Get new token
+		newToken := getRefreshTokenCookie(refreshRR1)
+		require.NotEmpty(t, newToken)
+		require.NotEqual(t, originalToken, newToken)
+
+		// Attempting to reuse original token should fail
+		refreshReq2 := httptest.NewRequest(http.MethodPost, "/refresh", nil)
+		refreshReq2.AddCookie(&http.Cookie{Name: "refresh_token", Value: originalToken})
+		refreshRR2 := httptest.NewRecorder()
+		router.ServeHTTP(refreshRR2, refreshReq2)
+
+		assert.Equal(t, http.StatusUnauthorized, refreshRR2.Code, "reusing old token should fail")
 	})
 }

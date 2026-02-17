@@ -14,8 +14,7 @@ import (
 )
 
 type authResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	AccessToken string `json:"access_token"`
 }
 
 type errorResponse struct {
@@ -49,6 +48,16 @@ func setupTest(t *testing.T) (string, func()) {
 	return testServer.URL, cleanup
 }
 
+// getRefreshTokenCookie extracts the refresh_token cookie from the response
+func getRefreshTokenCookie(resp *http.Response) string {
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == "refresh_token" {
+			return cookie.Value
+		}
+	}
+	return ""
+}
+
 // Integration test for the server wiring using a real Postgres DB.
 func TestServerIntegration(t *testing.T) {
 
@@ -72,7 +81,10 @@ func TestServerIntegration(t *testing.T) {
 		err = json.NewDecoder(resp.Body).Decode(&body)
 		require.NoError(t, err)
 		assert.NotEmpty(t, body.AccessToken)
-		assert.NotEmpty(t, body.RefreshToken)
+
+		// Verify refresh token is in cookie
+		refreshCookie := getRefreshTokenCookie(resp)
+		assert.NotEmpty(t, refreshCookie, "refresh_token cookie should be set")
 	})
 
 	t.Run("Register duplicate email", func(t *testing.T) {
@@ -126,7 +138,10 @@ func TestServerIntegration(t *testing.T) {
 		err = json.NewDecoder(resp.Body).Decode(&body)
 		require.NoError(t, err)
 		assert.NotEmpty(t, body.AccessToken)
-		assert.NotEmpty(t, body.RefreshToken)
+
+		// Verify refresh token is in cookie
+		refreshCookie := getRefreshTokenCookie(resp)
+		assert.NotEmpty(t, refreshCookie, "refresh_token cookie should be set")
 	})
 
 	t.Run("Login unauthorized", func(t *testing.T) {
@@ -148,5 +163,81 @@ func TestServerIntegration(t *testing.T) {
 		err = json.NewDecoder(resp.Body).Decode(&body)
 		require.NoError(t, err)
 		assert.NotEmpty(t, body.Error)
+	})
+
+	t.Run("Refresh endpoint success", func(t *testing.T) {
+
+		// Setup test server and DB
+		serverURL, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Register a user
+		reqBody := map[string]string{"email": "refresh@example.com", "password": "pass"}
+		reqBodyJSON, _ := json.Marshal(reqBody)
+		regResp, err := http.Post(serverURL+"/register", "application/json", bytes.NewReader(reqBodyJSON))
+		require.NoError(t, err)
+		defer regResp.Body.Close()
+		require.Equal(t, http.StatusCreated, regResp.StatusCode)
+
+		// Get refresh token from cookie
+		refreshToken := getRefreshTokenCookie(regResp)
+		require.NotEmpty(t, refreshToken)
+
+		// Make refresh request with cookie
+		client := &http.Client{}
+		req, _ := http.NewRequest(http.MethodPost, serverURL+"/refresh", nil)
+		req.AddCookie(&http.Cookie{Name: "refresh_token", Value: refreshToken})
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		// Verify response
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var body authResponse
+		err = json.NewDecoder(resp.Body).Decode(&body)
+		require.NoError(t, err)
+		assert.NotEmpty(t, body.AccessToken)
+
+		// Verify new refresh token is in cookie (rotation)
+		newRefreshCookie := getRefreshTokenCookie(resp)
+		assert.NotEmpty(t, newRefreshCookie, "new refresh_token cookie should be set")
+		assert.NotEqual(t, refreshToken, newRefreshCookie, "refresh token should be rotated")
+	})
+
+	t.Run("Logout endpoint success", func(t *testing.T) {
+
+		// Setup test server and DB
+		serverURL, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Register a user
+		reqBody := map[string]string{"email": "logout@example.com", "password": "pass"}
+		reqBodyJSON, _ := json.Marshal(reqBody)
+		regResp, err := http.Post(serverURL+"/register", "application/json", bytes.NewReader(reqBodyJSON))
+		require.NoError(t, err)
+		defer regResp.Body.Close()
+		require.Equal(t, http.StatusCreated, regResp.StatusCode)
+
+		// Get refresh token from cookie
+		refreshToken := getRefreshTokenCookie(regResp)
+		require.NotEmpty(t, refreshToken)
+
+		// Logout
+		client := &http.Client{}
+		req, _ := http.NewRequest(http.MethodPost, serverURL+"/logout", nil)
+		req.AddCookie(&http.Cookie{Name: "refresh_token", Value: refreshToken})
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// Verify cookie is cleared
+		for _, cookie := range resp.Cookies() {
+			if cookie.Name == "refresh_token" {
+				assert.True(t, cookie.MaxAge < 0, "cookie should be cleared")
+			}
+		}
 	})
 }

@@ -4,3 +4,5 @@ CREATE TABLE users (
     password_hash TEXT NOT NULL,
     created_at TIMESTAMP NOT NULL
 );
+
+CREATE INDEX idx_users_email ON users(email);

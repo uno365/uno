@@ -13,4 +13,10 @@ var (
 	ErrUserNotFound = errors.New("User not found")
 	// ErrInvalidToken is returned when a token is invalid or expired.
 	ErrInvalidToken = errors.New("Invalid or expired token")
+	// ErrSessionNotFound is returned when a session cannot be found.
+	ErrSessionNotFound = errors.New("Session not found")
+	// ErrSessionRevoked is returned when attempting to use a revoked session.
+	ErrSessionRevoked = errors.New("Session has been revoked")
+	// ErrTokenReuse is returned when refresh token reuse is detected.
+	ErrTokenReuse = errors.New("Refresh token reuse detected")
 )
