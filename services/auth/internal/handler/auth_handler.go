@@ -49,8 +49,8 @@ func isSecureRequest(r *http.Request) bool {
 	// Allow insecure cookies for localhost development
 	host := r.Host
 	if host == "localhost" || host == "127.0.0.1" ||
-		len(host) > 10 && host[:10] == "localhost:" ||
-		len(host) > 10 && host[:10] == "127.0.0.1:" {
+		strings.HasPrefix(host, "localhost:") ||
+		strings.HasPrefix(host, "127.0.0.1:") {
 		return false
 	}
 
