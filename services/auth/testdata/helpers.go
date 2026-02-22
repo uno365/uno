@@ -28,7 +28,10 @@ func SetupTestDB(ctx context.Context) (*TestDB, error) {
 		return nil, err
 	}
 
-	db.Migrate()
+	if err := db.Migrate(); err != nil {
+		pgContainer.Container.Terminate(ctx)
+		return nil, err
+	}
 
 	return &TestDB{
 		PostgresContainer: pgContainer,
