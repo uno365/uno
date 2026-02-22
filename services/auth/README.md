@@ -1,37 +1,44 @@
 # Auth Service
 
-A lightweight authentication microservice built with Go, providing user registration and login functionality with JWT-based authentication.
+A lightweight authentication microservice built with Go, providing user registration, login, token refresh, and logout functionality with JWT-based authentication.
 
 ## Features
 
 - User registration with email/password
-- User login with JWT access and refresh tokens
+- User login with JWT access tokens
+- Token refresh with rotating refresh tokens (stored in HTTP-only cookies)
+- Session management with logout
 - Password hashing with bcrypt
 - PostgreSQL database with automatic migrations
-- Clean architecture (domain, repository, service, handler layers)
+- Hexagonal architecture (ports, adapters, domain, service)
 - Docker support
+- Comprehensive test coverage (unit + integration tests)
 
 ## Tech Stack
 
-- **Framework**: [Gin](https://github.com/gin-gonic/gin)
+- **Framework**: [Chi](https://github.com/go-chi/chi) router
 - **Database**: PostgreSQL with [pgx](https://github.com/jackc/pgx) driver
 - **Authentication**: [JWT](https://github.com/golang-jwt/jwt)
 - **Migrations**: [golang-migrate](https://github.com/golang-migrate/migrate)
-- **Testing**: [testcontainers-go](https://github.com/testcontainers/testcontainers-go)
+- **Testing**: [testify](https://github.com/stretchr/testify) + [testcontainers-go](https://github.com/testcontainers/testcontainers-go)
 
 ## Project Structure
 
 ```
-├── cmd/server/          # Application entrypoint
+├── cmd/http/                    # HTTP server entrypoint
 ├── internal/
-│   ├── domain/          # Domain models and errors
-│   ├── handler/         # HTTP handlers
-│   ├── repository/      # Data access layer
-│   │   └── pg/          # PostgreSQL implementation
-│   ├── service/         # Business logic
-│   └── token/           # JWT token management
-├── migrations/          # SQL migration files
-└── utils/               # Utility functions
+│   ├── adapter/                 # External interfaces (driven/driving adapters)
+│   │   ├── db/postgres/         # PostgreSQL implementation
+│   │   │   ├── migrations/      # SQL migration files
+│   │   │   └── repo/            # Repository implementations
+│   │   ├── handler/http/        # HTTP handlers
+│   │   │   └── middleware/      # HTTP middleware
+│   │   └── token/               # JWT token implementation
+│   └── core/                    # Business logic (domain layer)
+│       ├── domain/              # Domain models and errors
+│       ├── port/                # Interfaces (ports)
+│       └── service/             # Business logic services
+└── testdata/                    # Test utilities and helpers
 ```
 
 ## Getting Started
@@ -40,7 +47,7 @@ A lightweight authentication microservice built with Go, providing user registra
 
 - Go 1.25+
 - PostgreSQL
-- Docker (optional)
+- Docker (optional, required for integration tests)
 
 ### Environment Variables
 
@@ -49,14 +56,18 @@ Create a `.env` file in the project root:
 ```env
 DATABASE_URL=postgres://user:password@localhost:5432/auth_db?sslmode=disable
 JWT_SECRET=your-secret-key
-PORT=8080
+PORT=4000
+CORS_ORIGINS=http://localhost:3000
+TRUST_PROXY=false
 ```
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DATABASE_URL` | PostgreSQL connection string | Required |
 | `JWT_SECRET` | Secret key for signing JWTs | Required |
-| `PORT` | Server port | `8080` |
+| `PORT` | Server port | `4000` |
+| `CORS_ORIGINS` | Comma-separated list of allowed origins | `http://localhost:3000` |
+| `TRUST_PROXY` | Trust X-Forwarded-For headers (set `true` behind reverse proxy) | `false` |
 
 ### Running Locally
 
@@ -65,7 +76,7 @@ PORT=8080
 go mod download
 
 # Run the server
-go run ./cmd/server
+go run ./cmd/http
 ```
 
 ### Running with Docker
@@ -75,7 +86,7 @@ go run ./cmd/server
 docker build -t auth-service .
 
 # Run the container
-docker run -p 8080:8080 \
+docker run -p 4000:4000 \
   -e DATABASE_URL="postgres://user:password@host:5432/auth_db" \
   -e JWT_SECRET="your-secret-key" \
   auth-service
@@ -97,13 +108,14 @@ POST /register
 }
 ```
 
-**Response (200 OK):**
+**Response (201 Created):**
 ```json
 {
-  "access_token": "eyJhbGciOiJIUzI1NiIs...",
-  "refresh_token": "eyJhbGciOiJIUzI1NiIs..."
+  "access_token": "eyJhbGciOiJIUzI1NiIs..."
 }
 ```
+
+Sets `refresh_token` as HTTP-only cookie.
 
 ### Login
 
@@ -122,15 +134,50 @@ POST /login
 **Response (200 OK):**
 ```json
 {
-  "access_token": "eyJhbGciOiJIUzI1NiIs...",
-  "refresh_token": "eyJhbGciOiJIUzI1NiIs..."
+  "access_token": "eyJhbGciOiJIUzI1NiIs..."
 }
 ```
+
+Sets `refresh_token` as HTTP-only cookie.
+
+### Refresh Token
+
+```
+POST /refresh
+```
+
+Requires `refresh_token` cookie (set automatically by login/register).
+
+**Response (200 OK):**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs..."
+}
+```
+
+Rotates the refresh token cookie.
+
+### Logout
+
+```
+POST /logout
+```
+
+Requires `refresh_token` cookie.
+
+**Response (200 OK):**
+```json
+{
+  "message": "logged out successfully"
+}
+```
+
+Revokes the session and clears the refresh token cookie.
 
 ## Token Details
 
 - **Access Token**: Valid for 15 minutes
-- **Refresh Token**: Valid for 7 days
+- **Refresh Token**: Valid for 7 days, stored in HTTP-only secure cookie
 - **Algorithm**: HS256
 
 ## Database Migrations
@@ -149,11 +196,11 @@ make db.migration.create name=migration_name
 ## Testing
 
 ```bash
-# Run all tests with coverage
+# Run unit tests with coverage
 make test
 
-# Or directly with go
-go test ./... --cover
+# Run only integration tests
+go test ./cmd/http/... -tags=integration -v
 ```
 
 Tests use [testcontainers-go](https://github.com/testcontainers/testcontainers-go) to spin up PostgreSQL containers for integration testing.
