@@ -44,6 +44,7 @@ func (db *DB) Migrate() error {
 	if err != nil {
 		return err
 	}
+	defer migrations.Close()
 
 	err = migrations.Up()
 	if err != nil && err != migrate.ErrNoChange {
