@@ -65,6 +65,11 @@ func isSecureRequest(r *http.Request) bool {
 }
 
 // setRefreshTokenCookie sets the refresh token as an HTTP-only secure cookie.
+// SameSite=Lax sends the cookie for top-level navigations and same-site AJAX requests
+// (e.g., app.example.com calling api.example.com), while blocking it for cross-origin
+// AJAX requests from a different registrable domain. Use SameSite=None (with Secure=true)
+// only if the frontend and API are on entirely different registrable domains (e.g.,
+// app.other.com calling api.example.com) and cross-origin AJAX requests must carry the cookie.
 func setRefreshTokenCookie(w http.ResponseWriter, r *http.Request, token string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshTokenCookieName,
@@ -73,7 +78,7 @@ func setRefreshTokenCookie(w http.ResponseWriter, r *http.Request, token string)
 		MaxAge:   refreshTokenMaxAge,
 		HttpOnly: true,
 		Secure:   isSecureRequest(r),
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 
@@ -86,7 +91,7 @@ func clearRefreshTokenCookie(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   isSecureRequest(r),
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Unix(0, 0),
 	})
 }
