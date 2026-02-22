@@ -11,7 +11,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"uno/services/auth/internal/core/domain"
-	portmock "uno/services/auth/internal/core/port/mock"
+	portmock "uno/services/auth/testdata/mock"
 )
 
 // Test fixtures
