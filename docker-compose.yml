@@ -34,7 +34,7 @@ services:
       DATABASE_URL: postgres://${AUTH_DB_USER}:${AUTH_DB_PASSWORD}@auth-db:5432/${AUTH_DB_NAME}?sslmode=disable
       JWT_SECRET: ${AUTH_JWT_SECRET}
     ports:
-      - "4000:4000"
+      - "${AUTH_SERVER_PORT:-4000}:4000"
     networks:
       - auth-network
 # ----------------------------
