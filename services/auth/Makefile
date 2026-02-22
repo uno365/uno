@@ -8,4 +8,4 @@ db.migration.create:
 	migrate create -ext sql -dir ./internal/adapter/db/postgres/migrations -seq $(name)
 
 test:
-	go test ./... -coverprofile=out/coverage.out && go tool cover -html=out/coverage.out -o out/coverage.html
+	go test ./... -tags=integration -coverprofile=out/coverage.out && go tool cover -html=out/coverage.out -o out/coverage.html
