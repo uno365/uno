@@ -153,7 +153,7 @@ func (handler *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(domain.RegisterResponse{
+	json.NewEncoder(w).Encode(domain.AuthResponse{
 		AccessToken: access,
 	})
 }
@@ -193,7 +193,7 @@ func (handler *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(domain.LoginResponse{
+	json.NewEncoder(w).Encode(domain.AuthResponse{
 		AccessToken: access,
 	})
 }
@@ -230,7 +230,7 @@ func (handler *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(domain.RefreshResponse{
+	json.NewEncoder(w).Encode(domain.AuthResponse{
 		AccessToken: access,
 	})
 }

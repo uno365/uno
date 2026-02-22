@@ -57,7 +57,7 @@ func TestRegister_Success(t *testing.T) {
 	// Assert
 	assert.Equal(t, http.StatusCreated, rr.Code)
 
-	var resp domain.RegisterResponse
+	var resp domain.AuthResponse
 	err := json.NewDecoder(rr.Body).Decode(&resp)
 	assert.NoError(t, err)
 	assert.Equal(t, testAccessToken, resp.AccessToken)
@@ -182,7 +182,7 @@ func TestLogin_Success(t *testing.T) {
 	// Assert
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	var resp domain.LoginResponse
+	var resp domain.AuthResponse
 	err := json.NewDecoder(rr.Body).Decode(&resp)
 	assert.NoError(t, err)
 	assert.Equal(t, testAccessToken, resp.AccessToken)
@@ -291,7 +291,7 @@ func TestRefresh_Success(t *testing.T) {
 	// Assert
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	var resp domain.RefreshResponse
+	var resp domain.AuthResponse
 	err := json.NewDecoder(rr.Body).Decode(&resp)
 	assert.NoError(t, err)
 	assert.Equal(t, newAccessToken, resp.AccessToken)

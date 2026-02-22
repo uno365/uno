@@ -8,31 +8,31 @@ import (
 
 // TestDB holds the postgres container and database connection pool for testing
 type TestDB struct {
-	Container *PostgresContainer
-	DB        *postgres.DB
+	PostgresContainer *PostgresContainer
+	DB                *postgres.DB
 }
 
 // SetupTestDB creates a postgres test container, runs migrations, and returns a database connection pool
 func SetupTestDB(ctx context.Context) (*TestDB, error) {
 	// Create postgres container
-	container, err := CreatePostgresContainer(ctx)
+	pgContainer, err := CreatePostgresContainer(ctx)
 
 	if err != nil {
 		return nil, err
 	}
 
-	db, err := postgres.NewDB(ctx, container.ConnectionString)
+	db, err := postgres.NewDB(ctx, pgContainer.ConnectionString)
 
 	if err != nil {
-		container.Terminate(ctx)
+		pgContainer.Container.Terminate(ctx)
 		return nil, err
 	}
 
 	db.Migrate()
 
 	return &TestDB{
-		Container: container,
-		DB:        db,
+		PostgresContainer: pgContainer,
+		DB:                db,
 	}, nil
 }
 
@@ -41,8 +41,8 @@ func (t *TestDB) Teardown(ctx context.Context) error {
 	if t.DB != nil {
 		t.DB.Close()
 	}
-	if t.Container != nil {
-		return t.Container.Terminate(ctx)
+	if t.PostgresContainer != nil {
+		return t.PostgresContainer.Container.Terminate(ctx)
 	}
 	return nil
 }

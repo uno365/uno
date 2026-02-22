@@ -9,7 +9,7 @@ import (
 
 // PostgresContainer wraps a postgres test container with its connection string.
 type PostgresContainer struct {
-	*postgres.PostgresContainer
+	Container        *postgres.PostgresContainer
 	ConnectionString string
 }
 
@@ -37,12 +37,13 @@ func CreatePostgresContainer(ctx context.Context) (*PostgresContainer, error) {
 	}
 
 	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
+
 	if err != nil {
 		return nil, err
 	}
 
 	return &PostgresContainer{
-		PostgresContainer: pgContainer,
-		ConnectionString:  connStr,
+		Container:        pgContainer,
+		ConnectionString: connStr,
 	}, nil
 }
