@@ -67,15 +67,6 @@ func (r *SessionRepo) GetByTokenHash(ctx context.Context, tokenHash string) (*do
 	return &session, nil
 }
 
-// UpdateTokenHash updates the session's refresh token hash and last used timestamp.
-func (r *SessionRepo) UpdateTokenHash(ctx context.Context, sessionID, newTokenHash string) error {
-	_, err := r.db.Exec(ctx,
-		`UPDATE sessions SET refresh_token_hash = $1, last_used_at = $2 WHERE id = $3`,
-		newTokenHash, time.Now(), sessionID,
-	)
-	return err
-}
-
 // Revoke marks a session as revoked.
 func (r *SessionRepo) Revoke(ctx context.Context, sessionID string) error {
 	now := time.Now()
@@ -96,8 +87,3 @@ func (r *SessionRepo) RevokeAllForUser(ctx context.Context, userID string) error
 	return err
 }
 
-// DeleteByID deletes a session by its ID.
-func (r *SessionRepo) DeleteByID(ctx context.Context, sessionID string) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM sessions WHERE id = $1`, sessionID)
-	return err
-}
