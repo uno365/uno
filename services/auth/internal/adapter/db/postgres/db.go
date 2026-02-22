@@ -1,4 +1,4 @@
-// Package utils provides utility functions for the auth service.
+// Package postgres provides PostgreSQL database connection pooling and migration utilities for the auth service.
 package postgres
 
 import (
