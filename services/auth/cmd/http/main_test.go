@@ -42,8 +42,9 @@ func TestServer_MountEnv(t *testing.T) {
 		os.Setenv("TRUST_PROXY", "true")
 
 		server := CreateNewServer()
-		server.MountEnv()
+		err := server.MountEnv()
 
+		require.NoError(t, err)
 		assert.Equal(t, "postgres://test:test@localhost:5432/test", server.DATABASE_URL)
 		assert.Equal(t, "test-secret", server.JWT_SECRET)
 		assert.Equal(t, "8080", server.PORT)
@@ -57,8 +58,9 @@ func TestServer_MountEnv(t *testing.T) {
 		os.Unsetenv("PORT")
 
 		server := CreateNewServer()
-		server.MountEnv()
+		err := server.MountEnv()
 
+		require.NoError(t, err)
 		assert.Equal(t, "4000", server.PORT)
 	})
 
@@ -68,8 +70,9 @@ func TestServer_MountEnv(t *testing.T) {
 		os.Unsetenv("CORS_ORIGINS")
 
 		server := CreateNewServer()
-		server.MountEnv()
+		err := server.MountEnv()
 
+		require.NoError(t, err)
 		assert.Equal(t, []string{"http://localhost:3000"}, server.CORS_ORIGINS)
 	})
 
@@ -79,8 +82,9 @@ func TestServer_MountEnv(t *testing.T) {
 		os.Unsetenv("TRUST_PROXY")
 
 		server := CreateNewServer()
-		server.MountEnv()
+		err := server.MountEnv()
 
+		require.NoError(t, err)
 		assert.False(t, server.TRUST_PROXY)
 	})
 
@@ -89,8 +93,10 @@ func TestServer_MountEnv(t *testing.T) {
 		os.Setenv("JWT_SECRET", "test-secret")
 
 		server := CreateNewServer()
-		server.MountEnv()
+		err := server.MountEnv()
 
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "DATABASE_URL")
 		assert.Empty(t, server.DATABASE_URL)
 	})
 
@@ -99,8 +105,10 @@ func TestServer_MountEnv(t *testing.T) {
 		os.Unsetenv("JWT_SECRET")
 
 		server := CreateNewServer()
-		server.MountEnv()
+		err := server.MountEnv()
 
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "JWT_SECRET")
 		assert.Empty(t, server.JWT_SECRET)
 	})
 }

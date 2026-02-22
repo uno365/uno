@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -40,7 +41,8 @@ func CreateNewServer() *Server {
 }
 
 // MountEnv loads environment variables and sets server configuration fields.
-func (server *Server) MountEnv() {
+// Returns an error if any required environment variables are missing.
+func (server *Server) MountEnv() error {
 	// Load environment variables
 	err := godotenv.Load()
 	if err != nil {
@@ -51,8 +53,7 @@ func (server *Server) MountEnv() {
 	databaseURL := os.Getenv("DATABASE_URL")
 
 	if databaseURL == "" {
-		slog.Default().Error("DATABASE_URL is not set")
-		return
+		return fmt.Errorf("DATABASE_URL is not set")
 	}
 
 	server.DATABASE_URL = databaseURL
@@ -61,8 +62,7 @@ func (server *Server) MountEnv() {
 	secret := os.Getenv("JWT_SECRET")
 
 	if secret == "" {
-		slog.Default().Error("JWT_SECRET is not set")
-		return
+		return fmt.Errorf("JWT_SECRET is not set")
 	}
 
 	server.JWT_SECRET = secret
@@ -92,27 +92,27 @@ func (server *Server) MountEnv() {
 	// Default to false for security
 	server.TRUST_PROXY = os.Getenv("TRUST_PROXY") == "true"
 
+	return nil
 }
 
 // MountDB initializes the database connection and runs migrations.
-func (server *Server) MountDB() {
+// Returns an error if the connection or migrations fail.
+func (server *Server) MountDB() error {
 	ctx := context.Background()
 	db, err := postgres.NewDB(ctx, server.DATABASE_URL)
 
 	if err != nil {
-		slog.Default().Error("Failed to connect to database", "error", err)
-		return
+		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 
 	err = db.Migrate()
 
 	if err != nil {
-		slog.Default().Error("Failed to run migrations", "error", err)
-		return
+		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 
 	server.DB = db
-
+	return nil
 }
 
 // MountMiddlewares sets up CORS and common middlewares for the router.
@@ -161,8 +161,14 @@ func (server *Server) Run() {
 
 func main() {
 	server := CreateNewServer()
-	server.MountEnv()
-	server.MountDB()
+	if err := server.MountEnv(); err != nil {
+		slog.Default().Error("Failed to load environment", "error", err)
+		os.Exit(1)
+	}
+	if err := server.MountDB(); err != nil {
+		slog.Default().Error("Failed to initialize database", "error", err)
+		os.Exit(1)
+	}
 	server.MountMiddlewares()
 	server.MountHandlers()
 	server.Run()

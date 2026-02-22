@@ -73,7 +73,7 @@ func (handler *AuthHandler) setRefreshTokenCookie(w http.ResponseWriter, r *http
 		MaxAge:   refreshTokenMaxAge,
 		HttpOnly: true,
 		Secure:   handler.isSecureRequest(r),
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 
@@ -86,7 +86,7 @@ func (handler *AuthHandler) clearRefreshTokenCookie(w http.ResponseWriter, r *ht
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   handler.isSecureRequest(r),
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Unix(0, 0),
 	})
 }
