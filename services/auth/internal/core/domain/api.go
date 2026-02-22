@@ -12,7 +12,7 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
-// RefreshResponse represents the response body for successful token refresh.
+// AuthResponse represents the response body for authentication operations (register, login, refresh).
 type AuthResponse struct {
 	AccessToken string `json:"access_token"`
 }
