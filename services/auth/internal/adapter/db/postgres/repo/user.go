@@ -1,27 +1,28 @@
-// Package pg provides PostgreSQL implementations of repository interfaces.
-package repository
+// Package repository provides PostgreSQL implementations of repository interfaces.
+package repo
 
 import (
 	"context"
 	"time"
-	"uno/services/auth/internal/domain"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
+
+	"uno/services/auth/internal/adapter/db/postgres"
+	"uno/services/auth/internal/core/domain"
 )
 
-// UserRepository implements UserRepository using PostgreSQL.
-type UserRepository struct {
-	db *pgxpool.Pool
+// UserRepo implements UserRepository using PostgreSQL.
+type UserRepo struct {
+	db *postgres.DB
 }
 
-// NewUserRepository creates a new UserRepository with the given connection pool.
-func NewUserRepository(db *pgxpool.Pool) *UserRepository {
-	return &UserRepository{db: db}
+// NewUserRepo creates a new UserRepo with the given connection pool.
+func NewUserRepo(db *postgres.DB) *UserRepo {
+	return &UserRepo{db: db}
 }
 
 // Create persists a new user to the database, generating a UUID and timestamp.
-func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
+func (r *UserRepo) Create(ctx context.Context, user *domain.User) (*domain.User, error) {
 	user.ID = uuid.NewString()
 	user.CreatedAt = time.Now()
 
@@ -31,11 +32,15 @@ func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
 		user.ID, user.Email, user.PasswordHash, user.CreatedAt,
 	)
 
-	return err
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
 }
 
 // GetByEmail retrieves a user by their email address.
-func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
+func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	row := r.db.QueryRow(ctx,
 		`SELECT id, email, password_hash, created_at
 		 FROM users WHERE email = $1`, email)
@@ -50,7 +55,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.
 }
 
 // GetByID retrieves a user by their unique identifier.
-func (r *UserRepository) GetByID(ctx context.Context, id string) (*domain.User, error) {
+func (r *UserRepo) GetByID(ctx context.Context, id string) (*domain.User, error) {
 	row := r.db.QueryRow(ctx,
 		`SELECT id, email, password_hash, created_at
 		 FROM users WHERE id = $1`, id)

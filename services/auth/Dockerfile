@@ -8,7 +8,7 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o auth ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o auth ./cmd/http
 
 # ---- Runtime Stage ----
 FROM alpine:latest
@@ -16,7 +16,7 @@ FROM alpine:latest
 WORKDIR /app
 
 COPY --from=builder /app/auth .
-COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/internal/adapter/db/postgres/migrations ./migrations
 
 EXPOSE 8080
 

@@ -8,25 +8,23 @@ import (
 	"os"
 	"strings"
 
-	"uno/services/auth/internal/handler"
-	"uno/services/auth/internal/middleware"
-	"uno/services/auth/internal/repository"
-	"uno/services/auth/internal/service"
-	"uno/services/auth/internal/token"
-	"uno/services/auth/utils"
-
 	"github.com/go-chi/chi/v5"
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/jackc/pgx/v5/pgxpool"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/joho/godotenv"
 
-	chimw "github.com/go-chi/chi/v5/middleware"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"uno/services/auth/internal/adapter/db/postgres"
+	"uno/services/auth/internal/adapter/db/postgres/repo"
+	httpHandler "uno/services/auth/internal/adapter/handler/http"
+	"uno/services/auth/internal/adapter/handler/http/middleware"
+	tokenAdapter "uno/services/auth/internal/adapter/token"
+	"uno/services/auth/internal/core/service"
 )
 
 type Server struct {
 	Router       *chi.Mux
-	DB           *pgxpool.Pool
+	DB           *postgres.DB
 	DATABASE_URL string
 	JWT_SECRET   string
 	PORT         string
@@ -34,18 +32,30 @@ type Server struct {
 	TRUST_PROXY  bool
 }
 
+// CreateNewServer initializes a new Server instance with a chi router.
 func CreateNewServer() *Server {
 	server := &Server{}
 	server.Router = chi.NewRouter()
 	return server
 }
 
+// MountEnv loads environment variables and sets server configuration fields.
 func (server *Server) MountEnv() {
 	// Load environment variables
 	err := godotenv.Load()
 	if err != nil {
 		slog.Default().Warn("Error loading .env file")
 	}
+
+	// Load DATABASE_URL
+	databaseURL := os.Getenv("DATABASE_URL")
+
+	if databaseURL == "" {
+		slog.Default().Error("DATABASE_URL is not set")
+		return
+	}
+
+	server.DATABASE_URL = databaseURL
 
 	// Load JWT_SECRET
 	secret := os.Getenv("JWT_SECRET")
@@ -61,7 +71,7 @@ func (server *Server) MountEnv() {
 	port := os.Getenv("PORT")
 
 	if port == "" {
-		port = "8080"
+		port = "4000"
 	}
 
 	server.PORT = port
@@ -70,7 +80,7 @@ func (server *Server) MountEnv() {
 	// Default to localhost for development
 	corsOrigins := os.Getenv("CORS_ORIGINS")
 	if corsOrigins == "" {
-		server.CORS_ORIGINS = []string{"http://localhost:3000", "http://localhost:5173"}
+		server.CORS_ORIGINS = []string{"http://localhost:3000"}
 	} else {
 		server.CORS_ORIGINS = strings.Split(corsOrigins, ",")
 		for i := range server.CORS_ORIGINS {
@@ -84,49 +94,54 @@ func (server *Server) MountEnv() {
 
 }
 
+// MountDB initializes the database connection and runs migrations.
 func (server *Server) MountDB() {
-
-	// Run database migrations
-	err := utils.RunMigrations("file://migrations", server.DATABASE_URL)
-	if err != nil {
-		slog.Default().Error("Failed to run migrations", "error", err)
-	}
-
-	// Initialize database connection
 	ctx := context.Background()
-
-	db, err := pgxpool.New(ctx, server.DATABASE_URL)
+	db, err := postgres.NewDB(ctx, server.DATABASE_URL)
 
 	if err != nil {
 		slog.Default().Error("Failed to connect to database", "error", err)
+		return
+	}
+
+	err = db.Migrate()
+
+	if err != nil {
+		slog.Default().Error("Failed to run migrations", "error", err)
+		return
 	}
 
 	server.DB = db
 
 }
 
-func (server *Server) MountHandlers() {
+// MountMiddlewares sets up CORS and common middlewares for the router.
+func (server *Server) MountMiddlewares() {
 
-	// Initialize repositories, services, and handlers
-	userRepo := repository.NewUserRepository(server.DB)
-	sessionRepo := repository.NewSessionRepository(server.DB)
-	jwtManager := token.NewJWTManager(server.JWT_SECRET)
-	authService := service.NewAuthService(userRepo, sessionRepo, jwtManager)
-	authHandler := handler.NewAuthHandler(authService, server.TRUST_PROXY)
-
-	// middlewares
-	c := cors.New(cors.Options{
+	corsMW := cors.New(cors.Options{
 		AllowedOrigins:   server.CORS_ORIGINS,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: true,
 		MaxAge:           300,
 	})
-	server.Router.Use(c.Handler)
+
+	server.Router.Use(corsMW.Handler)
 	server.Router.Use(chimw.RequestID)
 	server.Router.Use(chimw.Logger)
 	server.Router.Use(chimw.Recoverer)
 	server.Router.Use(middleware.ErrorHandler)
+}
+
+// MountHandlers sets up the HTTP handlers for authentication routes.
+func (server *Server) MountHandlers() {
+
+	userRepo := repo.NewUserRepo(server.DB)
+	sessionRepo := repo.NewSessionRepo(server.DB)
+
+	tokenManager := tokenAdapter.NewJWT(server.JWT_SECRET)
+	authService := service.NewAuthService(userRepo, sessionRepo, tokenManager)
+	authHandler := httpHandler.NewAuthHandler(authService, server.TRUST_PROXY)
 
 	// routes
 	server.Router.Post("/register", authHandler.Register)
@@ -135,6 +150,7 @@ func (server *Server) MountHandlers() {
 	server.Router.Post("/logout", authHandler.Logout)
 }
 
+// Run starts the HTTP server on the configured port.
 func (server *Server) Run() {
 	slog.Default().Info("Auth service running on :" + server.PORT)
 
@@ -147,6 +163,7 @@ func main() {
 	server := CreateNewServer()
 	server.MountEnv()
 	server.MountDB()
+	server.MountMiddlewares()
 	server.MountHandlers()
 	server.Run()
 }

@@ -7,13 +7,11 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"golang.org/x/crypto/bcrypt"
 	"log/slog"
 	"time"
-	"uno/services/auth/internal/domain"
-	"uno/services/auth/internal/repository"
-	"uno/services/auth/internal/token"
-
-	"golang.org/x/crypto/bcrypt"
+	"uno/services/auth/internal/core/domain"
+	"uno/services/auth/internal/core/port"
 )
 
 const (
@@ -23,17 +21,17 @@ const (
 
 // AuthService handles user authentication operations including registration and login.
 type AuthService struct {
-	userRepo    *repository.UserRepository
-	sessionRepo *repository.SessionRepository
-	jwt         *token.JWTManager
+	userRepo     port.UserRepo
+	sessionRepo  port.SessionRepo
+	tokenService port.TokenService
 }
 
 // NewAuthService creates a new AuthService with the given repositories and JWT manager.
-func NewAuthService(userRepo *repository.UserRepository, sessionRepo *repository.SessionRepository, jwt *token.JWTManager) *AuthService {
+func NewAuthService(userRepo port.UserRepo, sessionRepo port.SessionRepo, tokenService port.TokenService) *AuthService {
 	return &AuthService{
-		userRepo:    userRepo,
-		sessionRepo: sessionRepo,
-		jwt:         jwt,
+		userRepo:     userRepo,
+		sessionRepo:  sessionRepo,
+		tokenService: tokenService,
 	}
 }
 
@@ -55,7 +53,7 @@ func (s *AuthService) Register(ctx context.Context, email, password, userAgent, 
 		PasswordHash: string(hash),
 	}
 
-	createErr := s.userRepo.Create(ctx, user)
+	_, createErr := s.userRepo.Create(ctx, user)
 	if createErr != nil {
 		return "", "", createErr
 	}
@@ -82,9 +80,9 @@ func (s *AuthService) Login(ctx context.Context, email, password, userAgent, ipA
 	return s.createSessionAndTokens(ctx, user.ID, userAgent, ipAddress)
 }
 
-// RefreshToken validates a refresh token, rotates it, and returns new tokens.
+// Refresh validates a refresh token, rotates it, and returns new tokens.
 // Implements reuse detection - if a token is reused, all user sessions are revoked.
-func (s *AuthService) RefreshToken(ctx context.Context, refreshToken, userAgent, ipAddress string) (newAccessToken, newRefreshToken string, err error) {
+func (s *AuthService) Refresh(ctx context.Context, refreshToken, userAgent, ipAddress string) (newAccessToken, newRefreshToken string, err error) {
 	// Hash the incoming refresh token
 	tokenHash := hashToken(refreshToken)
 
@@ -147,7 +145,7 @@ func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
 // createSessionAndTokens generates tokens and creates a session record.
 func (s *AuthService) createSessionAndTokens(ctx context.Context, userID, userAgent, ipAddress string) (accessToken, refreshToken string, err error) {
 	// Generate access token
-	accessToken, err = s.jwt.Generate(userID, accessTokenDuration)
+	accessToken, err = s.tokenService.Generate(userID, accessTokenDuration)
 	if err != nil {
 		return "", "", err
 	}
@@ -170,7 +168,7 @@ func (s *AuthService) createSessionAndTokens(ctx context.Context, userID, userAg
 		ExpiresAt:        time.Now().Add(refreshTokenDuration),
 	}
 
-	err = s.sessionRepo.Create(ctx, session)
+	_, err = s.sessionRepo.Create(ctx, session)
 	if err != nil {
 		return "", "", err
 	}

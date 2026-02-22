@@ -1,5 +1,5 @@
-// Package handler provides HTTP handlers for authentication endpoints.
-package handler
+// Package http provides HTTP handlers for authentication endpoints.
+package http
 
 import (
 	"encoding/json"
@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"uno/services/auth/internal/domain"
-	"uno/services/auth/internal/middleware"
-	"uno/services/auth/internal/service"
+	"uno/services/auth/internal/adapter/handler/http/middleware"
+	"uno/services/auth/internal/core/domain"
+	"uno/services/auth/internal/core/port"
 )
 
 const (
@@ -22,14 +22,14 @@ const (
 
 // AuthHandler handles HTTP requests for authentication operations.
 type AuthHandler struct {
-	service           *service.AuthService
+	service           port.AuthService
 	trustProxyHeaders bool
 }
 
 // NewAuthHandler creates a new AuthHandler with the given AuthService.
 // Set trustProxyHeaders to true only when running behind a properly configured
 // reverse proxy that overwrites X-Forwarded-For and X-Real-IP headers.
-func NewAuthHandler(s *service.AuthService, trustProxyHeaders bool) *AuthHandler {
+func NewAuthHandler(s port.AuthService, trustProxyHeaders bool) *AuthHandler {
 	return &AuthHandler{
 		service:           s,
 		trustProxyHeaders: trustProxyHeaders,
@@ -204,6 +204,7 @@ func (handler *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 func (handler *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	// Read refresh token from cookie
 	cookie, err := r.Cookie(refreshTokenCookieName)
+
 	if err != nil || cookie.Value == "" {
 		http.Error(w, `{"error":"refresh token is required"}`, http.StatusBadRequest)
 		return
@@ -213,7 +214,7 @@ func (handler *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	userAgent, ipAddress := handler.getClientInfo(r)
 
 	// Call service layer to refresh tokens
-	access, refresh, err := handler.service.RefreshToken(r.Context(), cookie.Value, userAgent, ipAddress)
+	access, refresh, err := handler.service.Refresh(r.Context(), cookie.Value, userAgent, ipAddress)
 
 	// Handle errors via middleware
 	if err != nil {

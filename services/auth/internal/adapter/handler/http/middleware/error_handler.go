@@ -5,8 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-
-	"uno/services/auth/internal/domain"
+	"uno/services/auth/internal/core/domain"
 )
 
 // ErrorResponse represents a standardized error response
