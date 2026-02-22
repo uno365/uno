@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,9 +27,7 @@ func TestMain(m *testing.M) {
 
 	testDB.Teardown(ctx)
 
-	if code != 0 {
-		panic("tests failed")
-	}
+	os.Exit(code)
 }
 
 func TestUserRepo_Create(t *testing.T) {
