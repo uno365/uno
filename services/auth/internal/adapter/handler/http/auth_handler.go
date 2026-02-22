@@ -39,11 +39,11 @@ func NewAuthHandler(s port.AuthService, trustProxyHeaders bool) *AuthHandler {
 // ================ Helper Functions ================
 
 // isSecureRequest determines if the request is over a secure connection.
-// Returns true for HTTPS connections or when behind a proxy with X-Forwarded-Proto: https.
+// Returns true for HTTPS connections or when behind a trusted proxy with X-Forwarded-Proto: https.
 // Returns false for localhost/127.0.0.1 to support local development over HTTP.
-func isSecureRequest(r *http.Request) bool {
-	// Check if behind a proxy reporting HTTPS
-	if r.Header.Get("X-Forwarded-Proto") == "https" {
+func (handler *AuthHandler) isSecureRequest(r *http.Request) bool {
+	// Only trust X-Forwarded-Proto when proxy headers are explicitly trusted
+	if handler.trustProxyHeaders && r.Header.Get("X-Forwarded-Proto") == "https" {
 		return true
 	}
 
@@ -65,32 +65,27 @@ func isSecureRequest(r *http.Request) bool {
 }
 
 // setRefreshTokenCookie sets the refresh token as an HTTP-only secure cookie.
-// SameSite=Lax sends the cookie for top-level navigations and same-site AJAX requests
-// (e.g., app.example.com calling api.example.com), while blocking it for cross-origin
-// AJAX requests from a different registrable domain. Use SameSite=None (with Secure=true)
-// only if the frontend and API are on entirely different registrable domains (e.g.,
-// app.other.com calling api.example.com) and cross-origin AJAX requests must carry the cookie.
-func setRefreshTokenCookie(w http.ResponseWriter, r *http.Request, token string) {
+func (handler *AuthHandler) setRefreshTokenCookie(w http.ResponseWriter, r *http.Request, token string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshTokenCookieName,
 		Value:    token,
 		Path:     "/",
 		MaxAge:   refreshTokenMaxAge,
 		HttpOnly: true,
-		Secure:   isSecureRequest(r),
+		Secure:   handler.isSecureRequest(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 }
 
 // clearRefreshTokenCookie removes the refresh token cookie.
-func clearRefreshTokenCookie(w http.ResponseWriter, r *http.Request) {
+func (handler *AuthHandler) clearRefreshTokenCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshTokenCookieName,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   isSecureRequest(r),
+		Secure:   handler.isSecureRequest(r),
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Unix(0, 0),
 	})
@@ -153,7 +148,7 @@ func (handler *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set refresh token cookie
-	setRefreshTokenCookie(w, r, refresh)
+	handler.setRefreshTokenCookie(w, r, refresh)
 
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
@@ -193,7 +188,7 @@ func (handler *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set refresh token cookie
-	setRefreshTokenCookie(w, r, refresh)
+	handler.setRefreshTokenCookie(w, r, refresh)
 
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
@@ -224,13 +219,13 @@ func (handler *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	// Handle errors via middleware
 	if err != nil {
 		// Clear the invalid cookie
-		clearRefreshTokenCookie(w, r)
+		handler.clearRefreshTokenCookie(w, r)
 		middleware.SetError(w, r, err)
 		return
 	}
 
 	// Set new refresh token cookie (rotation)
-	setRefreshTokenCookie(w, r, refresh)
+	handler.setRefreshTokenCookie(w, r, refresh)
 
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
@@ -257,7 +252,7 @@ func (handler *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Clear the refresh token cookie
-	clearRefreshTokenCookie(w, r)
+	handler.clearRefreshTokenCookie(w, r)
 
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
