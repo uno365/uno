@@ -2,14 +2,8 @@ package testdata
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"strings"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"uno/services/auth/internal/adapter/db/postgres"
-	"uno/services/auth/utils"
 )
 
 // TestDB holds the postgres container and database connection pool for testing
