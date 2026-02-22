@@ -2,6 +2,7 @@ package http
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -560,4 +561,84 @@ func TestGetClientInfo_XRealIP(t *testing.T) {
 	// Assert
 	assert.Equal(t, "TestBrowser/1.0", userAgent)
 	assert.Equal(t, "10.0.0.1", ipAddress) // Uses X-Real-IP
+}
+
+// ==================== isSecureRequest Tests ====================
+
+func TestIsSecureRequest_XForwardedProto_TrustedProxy(t *testing.T) {
+	// When trustProxyHeaders is true, X-Forwarded-Proto: https should be trusted
+	mockService := new(portmock.AuthService)
+	handler := NewAuthHandler(mockService, true)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+
+	assert.True(t, handler.isSecureRequest(req))
+}
+
+func TestIsSecureRequest_XForwardedProto_UntrustedProxy(t *testing.T) {
+	// When trustProxyHeaders is false, X-Forwarded-Proto: https must NOT be trusted
+	mockService := new(portmock.AuthService)
+	handler := NewAuthHandler(mockService, false)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Host = "example.com"
+
+	// Should default to secure (production host) but must NOT use X-Forwarded-Proto
+	assert.True(t, handler.isSecureRequest(req))
+}
+
+func TestIsSecureRequest_XForwardedProto_Ignored_NoTLS(t *testing.T) {
+	// When trustProxyHeaders is false and there is no real TLS, the result
+	// must be based solely on the host — not on the spoofed X-Forwarded-Proto header.
+	// With X-Forwarded-Proto: http (or absent) and a non-localhost host and no TLS,
+	// isSecureRequest should fall back to the default (true for production hosts).
+	mockService := new(portmock.AuthService)
+	handler := NewAuthHandler(mockService, false)
+
+	reqWithHeader := httptest.NewRequest(http.MethodGet, "/", nil)
+	reqWithHeader.Header.Set("X-Forwarded-Proto", "http")
+	reqWithHeader.Host = "example.com"
+
+	reqWithoutHeader := httptest.NewRequest(http.MethodGet, "/", nil)
+	reqWithoutHeader.Host = "example.com"
+
+	// Both requests should return the same result since X-Forwarded-Proto is ignored
+	assert.Equal(t, handler.isSecureRequest(reqWithoutHeader), handler.isSecureRequest(reqWithHeader))
+}
+
+func TestIsSecureRequest_XForwardedProto_Spoofed_Localhost(t *testing.T) {
+	// Attacker sets X-Forwarded-Proto: https but proxy headers are not trusted
+	// and host is localhost — should return false (allow dev over HTTP)
+	mockService := new(portmock.AuthService)
+	handler := NewAuthHandler(mockService, false)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Host = "localhost:8080"
+
+	assert.False(t, handler.isSecureRequest(req))
+}
+
+func TestIsSecureRequest_DirectTLS(t *testing.T) {
+	// A direct TLS connection should always be secure regardless of trustProxyHeaders
+	mockService := new(portmock.AuthService)
+	handler := NewAuthHandler(mockService, false)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.TLS = &tls.ConnectionState{}
+
+	assert.True(t, handler.isSecureRequest(req))
+}
+
+func TestIsSecureRequest_Localhost(t *testing.T) {
+	// Localhost without TLS should return false to support local development
+	mockService := new(portmock.AuthService)
+	handler := NewAuthHandler(mockService, false)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "localhost"
+
+	assert.False(t, handler.isSecureRequest(req))
 }
