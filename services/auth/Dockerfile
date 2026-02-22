@@ -18,6 +18,6 @@ WORKDIR /app
 COPY --from=builder /app/auth .
 COPY --from=builder /app/internal/adapter/db/postgres/migrations ./migrations
 
-EXPOSE 8080
+EXPOSE 4000
 
 CMD ["./auth"]
